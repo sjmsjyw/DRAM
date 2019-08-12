@@ -107,7 +107,7 @@ def download_and_process_dbcan(dbcan_hmm=None, output_dir='.', dbcan_release='7'
     return dbcan_hmm
 
 
-def download_and_process_viral_refseq(merged_viral_faas=None, output_dir='.', viral_files=3, threads=10, verbose=True):
+def download_and_process_viral_refseq(merged_viral_faas=None, output_dir='.', viral_files=2, threads=10, verbose=True):
     """Can only download newest version"""
     # download all of the viral protein files, need to know the number of files
     # TODO: Make it so that you don't need to know number of viral files in refseq viral
