@@ -18,7 +18,7 @@ from mag_annotator.annotate_bins import filter_fasta, run_prodigal, get_best_hit
     generate_annotated_fasta, create_annotated_fasta, generate_renamed_fasta, rename_fasta, run_trna_scan, \
     run_barrnap, do_blast_style_search, count_motifs, strip_endings, process_custom_dbs, get_dups, \
     parse_hmmsearch_domtblout, annotate_gff, make_gbk_from_gff_and_fasta, make_trnas_interval, make_rrnas_interval,\
-    add_intervals_to_gff, filter_db_locs
+    add_intervals_to_gff, filter_db_locs, process_trna_scan, process_barrnap
 
 
 @pytest.fixture()
@@ -321,21 +321,24 @@ def test_rename_fasta(fasta_loc, tmpdir):
 
 def test_run_trna_scan(tmpdir):
     filt_fasta = tmpdir.mkdir('test_trnascan1')
-    no_trna = run_trna_scan(os.path.join('tests', 'data', 'e_coli_16S.fasta'), str(filt_fasta), 'no_trnas',
-                            threads=1, verbose=False)
+    no_trna = run_trna_scan(os.path.join('tests', 'data', 'e_coli_16S.fasta'), str(filt_fasta), threads=1,
+                            verbose=False)
     assert no_trna is None
 
     filt_fasta = tmpdir.mkdir('test_trnascan2')
     trnas_loc = os.path.join('tests', 'data', 'trnas.fa')
-    trnas = run_trna_scan(trnas_loc, str(filt_fasta), 'phiX', threads=1, verbose=False)
+    raw_trnas = run_trna_scan(trnas_loc, str(filt_fasta), threads=1, verbose=False)
+    trnas = process_trna_scan(raw_trnas, 'phiX')
     assert trnas.shape == (6, 9)
 
 
 def test_run_barrnap(fasta_loc):
-    no_rrnas = run_barrnap(fasta_loc, 'phiX', threads=1, verbose=False)
+    raw_no_rrnas = run_barrnap(fasta_loc, threads=1, verbose=False)
+    no_rrnas = process_barrnap(raw_no_rrnas, 'no_rrnas')
     assert no_rrnas is None
 
-    rrna_table = run_barrnap(os.path.join('tests', 'data', 'e_coli_16S.fasta'), 'coli', threads=1, verbose=False)
+    raw_rrna_table = run_barrnap(os.path.join('tests', 'data', 'e_coli_16S.fasta'), threads=1, verbose=False)
+    rrna_table = process_barrnap(raw_rrna_table, 'coli')
     assert rrna_table.shape == (1, 8)
     assert rrna_table.loc[0, 'type'] == '16S rRNA'
     assert rrna_table.loc[0, 'fasta'] == 'coli'
@@ -618,11 +621,9 @@ def test_add_intervals_to_gff(annotated_fake_gff_loc, tmpdir):
     add_intervals_test_loc = tmpdir.mkdir('fake_rrnas_loc')
     annotate_fake_gff_loc_w_rna = os.path.join(add_intervals_test_loc, 'fake.gff')
     copy(annotated_fake_gff_loc, annotate_fake_gff_loc_w_rna)
-    fake_rrnas_loc = os.path.join(add_intervals_test_loc, 'rrnas.tsv')
     fake_rrnas = pd.DataFrame([['fake_NC_001422.1', 990, 1000, 101.0, '+', '16S ribosomal rRNA gene', pd.np.NaN]],
                               columns=['scaffold', 'begin', 'end', 'e-value', 'strand', 'type', 'note'])
-    fake_rrnas.to_csv(fake_rrnas_loc, sep='\t')
-    add_intervals_to_gff(fake_rrnas_loc, annotate_fake_gff_loc_w_rna, {'fake_NC_001422.1': 6000}, make_rrnas_interval,
+    add_intervals_to_gff(fake_rrnas, annotate_fake_gff_loc_w_rna, {'fake_NC_001422.1': 6000}, make_rrnas_interval,
                          'scaffold')
     assert os.path.isfile(annotate_fake_gff_loc_w_rna)
     gff = list(read_sequence(annotate_fake_gff_loc_w_rna, format='gff3'))

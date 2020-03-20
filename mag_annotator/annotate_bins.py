@@ -526,35 +526,43 @@ def get_dups(columns):
     return keep
 
 
-def run_trna_scan(fasta, tmp_dir, fasta_name, threads=10, verbose=True):
+def run_trna_scan(fasta, tmp_dir, threads=10, verbose=True):
     """Run tRNAscan-SE on scaffolds and create a table of tRNAs as a separate output"""
     raw_trnas = path.join(tmp_dir, 'raw_trnas.txt')
     run_process(['tRNAscan-SE', '-G', '-o', raw_trnas, '--thread', str(threads), fasta], verbose=verbose)
     if path.isfile(raw_trnas) and stat(raw_trnas).st_size > 0:
-        trna_frame = pd.read_csv(raw_trnas, sep='\t', skiprows=[0, 2])
-        trna_frame.columns = [i.strip() for i in trna_frame.columns]
-        # if begin.1 or end.1 are in trnas then drop, else drop the second begin or end
-        if 'Begin.1' in trna_frame.columns:
-            trna_frame = trna_frame.drop(['Begin.1'], axis=1)
-        if 'End.1' in trna_frame.columns:
-            trna_frame = trna_frame.drop(['End.1'], axis=1)
-        trna_frame = trna_frame.loc[:, get_dups(trna_frame.columns)]
-        trna_frame.insert(0, 'fasta', fasta_name)
-        return trna_frame
+        return raw_trnas
     else:
         warnings.warn('No tRNAs were detected, no trnas.tsv file will be created.')
         return None
+
+
+def process_trna_scan(raw_trnas, fasta_name):
+    trna_frame = pd.read_csv(raw_trnas, sep='\t', skiprows=[0, 2])
+    trna_frame.columns = [i.strip() for i in trna_frame.columns]
+    # if begin.1 or end.1 are in trnas then drop, else drop the second begin or end
+    if 'Begin.1' in trna_frame.columns:
+        trna_frame = trna_frame.drop(['Begin.1'], axis=1)
+    if 'End.1' in trna_frame.columns:
+        trna_frame = trna_frame.drop(['End.1'], axis=1)
+    trna_frame = trna_frame.loc[:, get_dups(trna_frame.columns)]
+    trna_frame.insert(0, 'fasta', fasta_name)
+    return trna_frame
 
 
 RAW_RRNA_COLUMNS = ['scaffold', 'tool_name', 'type', 'begin', 'end', 'e-value', 'strand', 'empty', 'note']
 RRNA_COLUMNS = ['fasta', 'begin', 'end', 'strand', 'type', 'e-value', 'note']
 
 
-def run_barrnap(fasta, fasta_name, threads=10, verbose=True):
+def run_barrnap(fasta, threads=10, verbose=True):
     raw_rrna_str = run_process(['barrnap', '--threads', str(threads), fasta], capture_stdout=True, check=False,
                                verbose=verbose)
     raw_rrna_table = pd.read_csv(io.StringIO(raw_rrna_str), skiprows=1, sep='\t', header=None,
                                  names=RAW_RRNA_COLUMNS, index_col=0)
+    return raw_rrna_table
+
+
+def process_barrnap(raw_rrna_table, fasta_name):
     rrna_table_rows = list()
     for gene, row in raw_rrna_table.iterrows():
         rrna_row_dict = {entry.split('=')[0]: entry.split('=')[1] for entry in row['note'].split(';')}
@@ -594,9 +602,8 @@ def make_rrnas_interval(scaffold, row, i):
 
 # TODO: make it take an input and output gff location and not overwrite
 # TODO: for some reason 1 is getting added to intervals when added to gff
-def add_intervals_to_gff(annotations_loc, gff_loc, len_dict, interval_function, groupby_column):
+def add_intervals_to_gff(annotation_frame, gff_loc, len_dict, interval_function, groupby_column):
     # get fasta length dict so we can merge, I'd love to be able to get this from somewhere else
-    annotation_frame = pd.read_csv(annotations_loc, sep='\t')
     # process trnas to intervals
     annotation_dict = dict()
     for scaffold, frame in annotation_frame.groupby(groupby_column):
@@ -822,22 +829,24 @@ def annotate_fasta(fasta_loc, fasta_name, output_dir, db_locs, db_handler, min_c
     # get tRNAs and rRNAs
     len_dict = {i.metadata['id']: len(i) for i in read_sequence(renamed_scaffolds, format='fasta')}
     if not skip_trnascan:
-        trna_table = run_trna_scan(renamed_scaffolds, tmp_dir, fasta_name, threads=threads, verbose=verbose)
-        if trna_table is not None:
+        raw_trnas = run_trna_scan(renamed_scaffolds, tmp_dir, threads=threads, verbose=verbose)
+        if raw_trnas is not None:
+            trna_table = process_trna_scan(raw_trnas, fasta_name)
             trna_loc = path.join(output_dir, 'trnas.tsv')
             trna_table.to_csv(trna_loc, sep='\t', index=False)
-            add_intervals_to_gff(trna_loc, renamed_gffs, len_dict,
+            add_intervals_to_gff(trna_table, renamed_gffs, len_dict,
                                  make_trnas_interval, 'Name')
         else:
             trna_loc = None
     else:
         trna_loc = None
 
-    rrna_table = run_barrnap(renamed_scaffolds, fasta_name, threads=threads, verbose=verbose)
+    raw_rrna_table = run_barrnap(renamed_scaffolds, threads=threads, verbose=verbose)
+    rrna_table = process_barrnap(raw_rrna_table, fasta_name)
     if rrna_table is not None:
         rrna_loc = path.join(output_dir, 'rrnas.tsv')
         rrna_table.to_csv(rrna_loc, sep='\t', index=False)
-        add_intervals_to_gff(rrna_loc, renamed_gffs, len_dict,
+        add_intervals_to_gff(rrna_table, renamed_gffs, len_dict,
                              make_rrnas_interval, 'scaffold')
     else:
         rrna_loc = None
