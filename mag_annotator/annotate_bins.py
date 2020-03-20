@@ -112,15 +112,18 @@ def process_reciprocal_best_hits(forward_output_loc, reverse_output_loc, target_
     forward_hits = forward_hits.set_index('qId')
     reverse_hits = pd.read_csv(reverse_output_loc, sep='\t', header=None, names=BOUTFMT6_COLUMNS)
     reverse_hits = reverse_hits.set_index('qId')
-    hits = pd.DataFrame(index=['%s_hit' % target_prefix, '%s_RBH' % target_prefix, '%s_identity' % target_prefix,
-                               '%s_bitScore' % target_prefix, '%s_eVal' % target_prefix])
+    hit_index = list()
+    hit_rows = list()
     for forward_hit, row in forward_hits.iterrows():
         rbh = False
         if row.tId in reverse_hits.index:
             if forward_hit == reverse_hits.loc[row.tId].tId:
                 rbh = True
-        hits[forward_hit] = [row.tId, rbh, row.seqIdentity, row.bitScore, row.eVal]
-    return hits.transpose()
+        hit_index.append(forward_hit)
+        hit_rows.append([row.tId, rbh, row.seqIdentity, row.bitScore, row.eVal])
+    return pd.DataFrame(hit_rows, index=hit_index, columns=['%s_hit' % target_prefix, '%s_RBH' % target_prefix,
+                                                            '%s_identity' % target_prefix,
+                                                            '%s_bitScore' % target_prefix, '%s_eVal' % target_prefix])
 
 
 def get_kegg_description(kegg_hits, header_dict):
