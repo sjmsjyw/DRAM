@@ -3,7 +3,6 @@ import pytest
 import os
 from io import StringIO
 from datetime import datetime
-from functools import partial
 from filecmp import cmp
 import time
 from shutil import copy
@@ -183,9 +182,9 @@ def test_get_peptidase_description():
 
 
 def test_get_sig():
-    assert not get_sig(1, 85, 100, 1)
-    assert get_sig(1, 86, 100, 1e-16)
-    assert not get_sig(1, 29, 100, 1e-20)
+    assert not get_sig({'target_start': 1, 'target_end': 85, 'target_length': 100, 'full_evalue': 1})
+    assert get_sig({'target_start': 1, 'target_end': 86, 'target_length': 100, 'full_evalue': 1e-16})
+    assert not get_sig({'target_start': 1, 'target_end': 29, 'target_length': 100, 'full_evalue': 1e-20})
 
 
 @pytest.fixture()
@@ -347,18 +346,11 @@ def test_run_barrnap(fasta_loc):
     assert rrna_table.loc[0, 'strand'] == '-'
 
 
-class FakeDatabaseHandler:
-    @staticmethod
-    def get_database_names():
-        return []
-
-
 def test_do_blast_style_search(mmseqs_db, target_mmseqs_db, tmpdir):
-    database_handler = FakeDatabaseHandler()
     working_dir = tmpdir.mkdir('test_blast_search')
-    get_fake_description = partial(get_basic_description, db_name='fake')
-    do_blast_style_search(mmseqs_db, target_mmseqs_db, str(working_dir), database_handler, get_fake_description,
-                          datetime.now(), db_name='fake', threads=1)
+    results = do_blast_style_search(mmseqs_db, target_mmseqs_db, str(working_dir), datetime.now(), db_name='fake',
+                                    threads=1)
+    assert list(results.columns) == ['fake_hit', 'fake_RBH', 'fake_identity', 'fake_bitScore', 'fake_eVal']
 
 
 def test_count_motifs(phix_proteins):

@@ -186,8 +186,8 @@ def get_peptidase_description(peptidase_hits, header_dict):
     return pd.concat([new_df.transpose(), peptidase_hits.drop('peptidase_hit', axis=1)], axis=1, sort=False)
 
 
-def run_mmseqs_profile_search(query_db, pfam_profile, output_loc, output_prefix='mmpro_results', db_handler=None,
-                              threads=10, verbose=False):
+def run_mmseqs_profile_search(query_db, pfam_profile, output_loc, output_prefix='mmpro_results', threads=10,
+                              verbose=False):
     """Use mmseqs to run a search against pfam, currently keeping all hits and not doing any extra filtering"""
     tmp_dir = path.join(output_loc, 'tmp')
     output_db = path.join(output_loc, '%s.mmsdb' % output_prefix)
@@ -196,6 +196,10 @@ def run_mmseqs_profile_search(query_db, pfam_profile, output_loc, output_prefix=
     output_loc = path.join(output_loc, '%s_output.b6' % output_prefix)
     run_process(['mmseqs', 'convertalis', query_db, pfam_profile, output_db, output_loc], verbose=verbose)
     pfam_results = pd.read_csv(output_loc, sep='\t', header=None, names=BOUTFMT6_COLUMNS)
+    return pfam_results
+
+
+def get_pfam_descriptions(pfam_results, output_prefix='mmpro_results', db_handler=None):
     if pfam_results.shape[0] > 0:
         pfam_dict = dict()
         if db_handler is not None:
@@ -213,8 +217,9 @@ def run_mmseqs_profile_search(query_db, pfam_profile, output_loc, output_prefix=
         return pd.Series(name='%s_hits' % output_prefix)
 
 
-def get_sig(tstart, tend, tlen, evalue):
+def get_sig(row):
     """Check if hmm match is significant, based on dbCAN described parameters"""
+    tstart, tend, tlen, evalue = row['target_start'], row['target_end'], row['target_length'], row['full_evalue']
     perc_cov = (tend - tstart)/tlen
     if perc_cov >= .35 and evalue <= 1e-15:
         return True
@@ -222,7 +227,6 @@ def get_sig(tstart, tend, tlen, evalue):
         return False
 
 
-# TODO: refactor following to methods to a shared run hmm step and individual get description steps
 def parse_hmmsearch_domtblout(file):
     df_lines = list()
     for line in open(file):
@@ -236,27 +240,62 @@ def parse_hmmsearch_domtblout(file):
     return hmmsearch_frame
 
 
-def run_hmmscan_kofam(gene_faa, kofam_hmm, output_dir, ko_list, threads=1, verbose=False):
-    output = path.join(output_dir, 'kofam_profile.b6')
-    run_process(['hmmsearch', '--domtblout', output, '--cpu', str(threads), kofam_hmm, gene_faa], verbose=verbose)
+# refactor hmmscan_dbcan and hmmscan_vogdb to merge
+# TODO: remove db_name requirement, only used for tmp
+def run_hmmscan(genes_faa, hmm_loc, output_loc, db_name='cazy', threads=10, verbose=False):
+    """Run hmmscan of genes against dbcan, apparently I can speed it up using hmmsearch in the reverse
+    Commands this is based on:
+    hmmscan --domtblout ~/dbCAN_test_1 dbCAN-HMMdb-V7.txt ~/shale_checkMetab_test/DRAM/genes.faa
+    cat ~/dbCAN_test_1 | grep -v '^#' | awk '{print $1,$3,$4,$6,$13,$16,$17,$18,$19}' | sed 's/ /\t/g' | \
+    sort -k 3,3 -k 8n -k 9n > dbCAN_test_1.good_cols.tsv
+    """
+    # Run hmmscan
+    output = path.join(output_loc, '%s_results.unprocessed.txt' % db_name)
+    run_process(['hmmsearch', '--domtblout', output, '--cpu', str(threads), hmm_loc, genes_faa],
+                verbose=verbose)
+
+    # Process results
     if path.isfile(output) and stat(output).st_size > 0:
-        ko_hits = parse_hmmsearch_domtblout(output)
+        res = parse_hmmsearch_domtblout(output)
+    else:
+        res = pd.DataFrame(columns=HMMSCAN_ALL_COLUMNS)
+    return res
 
-        is_sig = list()
-        for ko, frame in ko_hits.groupby('target_id'):
-            ko_row = ko_list.loc[ko]
-            if ko_row['score_type'] == 'domain':
-                score = frame.domain_score
-            elif ko_row['score_type'] == 'full':
-                score = frame.full_score
-            elif ko_row['score_type'] == '-':
-                continue
-            else:
-                raise ValueError(ko_row['score_type'])
-            frame = frame.loc[score.astype(float) > float(ko_row.threshold)]
-            is_sig.append(frame)
-        ko_hits_sig = pd.concat(is_sig)
 
+def get_significant_hits(res, determine_significance, top_hit_only=False):
+    significant = [row_num for row_num, row in res.iterrows() if determine_significance(row)]
+    if len(significant) == 0:  # if nothing significant then return nothing, don't get descriptions
+        return pd.DataFrame(columns=HMMSCAN_ALL_COLUMNS)
+    res_significant = res.loc[significant]
+    if top_hit_only:
+        # get only top result
+        res_significant = res_significant.sort_values('full_evalue')
+        res_most_sig_list = list()
+        for gene, frame in res_significant.groupby('query_id'):
+            res_most_sig_list.append(frame.index[0])
+        res_significant = res_significant.loc[res_most_sig_list]
+    return res_significant
+
+
+def get_significant_kofam(ko_hits, ko_list):
+    is_sig = list()
+    for ko, frame in ko_hits.groupby('target_id'):
+        ko_row = ko_list.loc[ko]
+        if ko_row['score_type'] == 'domain':
+            score = frame.domain_score
+        elif ko_row['score_type'] == 'full':
+            score = frame.full_score
+        elif ko_row['score_type'] == '-':
+            continue
+        else:
+            raise ValueError(ko_row['score_type'])
+        frame = frame.loc[score.astype(float) > float(ko_row.threshold)]
+        is_sig.append(frame)
+    return pd.concat(is_sig)
+
+
+def get_kofam_descriptions(ko_hits_sig, ko_list):
+    if len(ko_hits_sig) > 0:
         kegg_dict = dict()
         for gene, frame in ko_hits_sig.groupby('query_id'):
             kegg_dict[gene] = [','.join([i for i in frame.target_id]),
@@ -266,37 +305,15 @@ def run_hmmscan_kofam(gene_faa, kofam_hmm, output_dir, ko_list, threads=1, verbo
         return pd.DataFrame(columns=['kegg_id', 'kegg_hit'])
 
 
-# refactor hmmscan_dbcan and hmmscan_vogdb to merge
-def run_hmmscan_dbcan(genes_faa, dbcan_loc, output_loc, threads=10, db_handler=None, verbose=False):
-    """Run hmmscan of genes against dbcan, apparently I can speed it up using hmmsearch in the reverse
-    Commands this is based on:
-    hmmscan --domtblout ~/dbCAN_test_1 dbCAN-HMMdb-V7.txt ~/shale_checkMetab_test/DRAM/genes.faa
-    cat ~/dbCAN_test_1 | grep -v '^#' | awk '{print $1,$3,$4,$6,$13,$16,$17,$18,$19}' | sed 's/ /\t/g' | \
-    sort -k 3,3 -k 8n -k 9n > dbCAN_test_1.good_cols.tsv
-    """
-    # Run hmmscan
-    dbcan_output = path.join(output_loc, 'dbcan_results.unprocessed.txt')
-    run_process(['hmmsearch', '--domtblout', dbcan_output, '--cpu', str(threads), dbcan_loc, genes_faa],
-                verbose=verbose)
-
-    # Process results
-    if path.isfile(dbcan_output) and stat(dbcan_output).st_size > 0:
-        dbcan_res = parse_hmmsearch_domtblout(dbcan_output)
-
-        significant = [row_num for row_num, row in dbcan_res.iterrows() if get_sig(row.target_start, row.target_end,
-                                                                                   row.target_length, row.full_evalue)]
-        if len(significant) == 0:  # if nothing significant then return nothing, don't get descriptions
-            return pd.Series(name='cazy_hits')
-        dbcan_res_significant = dbcan_res.loc[significant]
-
+def get_dbcan_descriptions(dbcan_res, db_handler):
+    if len(dbcan_res) > 0:
         dbcan_dict = dict()
         if db_handler is not None:
             dbcan_descriptions = db_handler.get_descriptions(set([strip_endings(i, ['.hmm']).split('_')[0] for i in
-                                                                  dbcan_res_significant.target_id]),
-                                                             'dbcan_description')
+                                                                  dbcan_res.target_id]), 'dbcan_description')
         else:
             dbcan_descriptions = None
-        for gene, frame in dbcan_res_significant.groupby('query_id'):
+        for gene, frame in dbcan_res.groupby('query_id'):
             if dbcan_descriptions is None:
                 dbcan_dict[gene] = '; '.join([i[:-4] for i in frame.target_id])
             else:
@@ -307,35 +324,16 @@ def run_hmmscan_dbcan(genes_faa, dbcan_loc, output_loc, threads=10, db_handler=N
         return pd.Series(name='cazy_hits')
 
 
-def run_hmmscan_vogdb(genes_faa, vogdb_loc, output_loc, threads=10, db_handler=None, verbose=False):
-    # run hmmscan
-    vogdb_output = path.join(output_loc, 'vogdb_results.unprocessed.txt')
-    run_process(['hmmsearch', '--domtblout', vogdb_output, '--cpu', str(threads), vogdb_loc, genes_faa],
-                verbose=verbose)
-
-    # Process Results
-    if path.isfile(vogdb_output) and stat(vogdb_output).st_size > 0:
-        vogdb_res = parse_hmmsearch_domtblout(vogdb_output)
-
-        significant = [row_num for row_num, row in vogdb_res.iterrows() if get_sig(row.target_start, row.target_end,
-                                                                                   row.target_length, row.full_evalue)]
-        if len(significant) == 0:  # if nothing significant then return nothing, don't get descriptions
-            return pd.Series(name='vogdb_hits')
-
-        vogdb_res = vogdb_res.loc[significant].sort_values('full_evalue')
-        vogdb_res_most_sig_list = list()
-        for gene, frame in vogdb_res.groupby('query_id'):
-            vogdb_res_most_sig_list.append(frame.index[0])
-        vogdb_res_most_sig = vogdb_res.loc[vogdb_res_most_sig_list]
-
+def get_vogdb_descriptions(vogdb_res, db_handler=None):
+    if len(vogdb_res) > 0:
+        # get descriptions
         vogdb_description_dict = dict()
         vogdb_category_dict = dict()
         if db_handler is not None:
-            vogdb_descriptions = db_handler.get_descriptions(set(vogdb_res_most_sig.target_id),
-                                                             'vogdb_description')
+            vogdb_descriptions = db_handler.get_descriptions(set(vogdb_res.target_id), 'vogdb_description')
         else:
             vogdb_descriptions = None
-        for _, row in vogdb_res_most_sig.iterrows():
+        for _, row in vogdb_res.iterrows():
             gene = row['query_id']
             vogdb_id = row['target_id']
             if vogdb_descriptions is None:
@@ -625,9 +623,8 @@ def add_intervals_to_gff(annotation_frame, gff_loc, len_dict, interval_function,
             f.write(gff_intervals.write(io.StringIO(), format='gff3', seq_id=scaffold).getvalue())
 
 
-def do_blast_style_search(query_db, target_db, working_dir, db_handler, get_description, start_time,
-                          db_name='database', bit_score_threshold=60, rbh_bit_score_threshold=350, threads=10,
-                          verbose=False):
+def do_blast_style_search(query_db, target_db, working_dir, start_time, db_name='database', bit_score_threshold=60,
+                          rbh_bit_score_threshold=350, threads=10, verbose=False):
     """A convenience function to do a blast style reciprocal best hits search"""
     # Get kegg hits
     print('%s: Getting forward best hits from %s' % (str(datetime.now() - start_time), db_name))
@@ -639,11 +636,20 @@ def do_blast_style_search(query_db, target_db, working_dir, db_handler, get_desc
     reverse_hits = get_reciprocal_best_hits(query_db, target_db, working_dir, 'gene', db_name,
                                             bit_score_threshold, rbh_bit_score_threshold, threads, verbose=verbose)
     hits = process_reciprocal_best_hits(forward_hits, reverse_hits, db_name)
-    print('%s: Getting descriptions of hits from %s' % (str(datetime.now() - start_time), db_name))
+    return hits
+
+
+def get_descriptions(hits, db_handler, get_description, db_name):
     if '%s_description' % db_name in db_handler.get_database_names():
-        header_dict = db_handler.get_descriptions(hits['%s_hit' % db_name], '%s_description' % db_name)
+        header_dict = db_handler.get_descriptions(set(hits['%s_hit' % db_name].dropna()), '%s_description' % db_name)
     else:
-        header_dict = multigrep(hits['%s_hit' % db_name], '%s_h' % target_db, '\x00', working_dir)
+        raise ValueError('%s not present in description database' % db_name)
+    hits = get_description(hits, header_dict)
+    return hits
+
+
+def get_descriptions_multigrep(hits, target_db, get_description, db_name, working_dir):
+    header_dict = multigrep(hits['%s_hit' % db_name], '%s_h' % target_db, '\x00', working_dir)
     hits = get_description(hits, header_dict)
     return hits
 
@@ -714,65 +720,64 @@ def annotate_orfs(gene_faa, db_locs, tmp_dir, start_time, db_handler, custom_db_
 
     # Get kegg hits
     if db_locs.get('kegg') is not None:
-        annotation_list.append(do_blast_style_search(query_db, db_locs['kegg'], tmp_dir,
-                                                     db_handler, get_kegg_description, start_time,
-                                                     'kegg', bit_score_threshold, rbh_bit_score_threshold, threads,
-                                                     verbose))
+        print('%s: Getting hits from KEGG' % str(datetime.now() - start_time))
+        kegg_hits = do_blast_style_search(query_db, db_locs['kegg'], tmp_dir, start_time, 'kegg', bit_score_threshold,
+                                          rbh_bit_score_threshold, threads, verbose)
+        annotation_list.append(get_descriptions(kegg_hits, db_handler, get_kegg_description, 'kegg'))
     elif db_locs.get('kofam') is not None and db_locs.get('kofam_ko_list') is not None:
         print('%s: Getting hits from kofam' % str(datetime.now() - start_time))
-        annotation_list.append(run_hmmscan_kofam(gene_faa, db_locs['kofam'], tmp_dir,
-                                                 pd.read_csv(db_locs['kofam_ko_list'], sep='\t', index_col=0),
-                                                 threads, verbose))
+        kofam_results = run_hmmscan(gene_faa, db_locs['kofam'], tmp_dir, 'kofam', verbose=verbose)
+        ko_list = pd.read_csv(db_locs['kofam_ko_list'], sep='\t', index_col=0)
+        kofam_results_sig = get_significant_kofam(kofam_results, ko_list)
+        annotation_list.append(get_kofam_descriptions(kofam_results_sig, ko_list))
     else:
         warnings.warn('No KEGG source provided so distillation will be of limited use.')
 
     # Get uniref hits
     if db_locs.get('uniref') is not None:
-        annotation_list.append(do_blast_style_search(query_db, db_locs['uniref'], tmp_dir,
-                                                     db_handler, get_uniref_description,
-                                                     start_time, 'uniref', bit_score_threshold,
-                                                     rbh_bit_score_threshold, threads, verbose))
+        uniref_hits = do_blast_style_search(query_db, db_locs['uniref'], tmp_dir, start_time, 'uniref',
+                                            bit_score_threshold, rbh_bit_score_threshold, threads, verbose)
+        annotation_list.append(get_descriptions(uniref_hits, db_handler, get_uniref_description, 'uniref'))
 
     # Get viral hits
     if db_locs.get('viral') is not None:
         get_viral_description = partial(get_basic_description, db_name='viral')
-        annotation_list.append(do_blast_style_search(query_db, db_locs['viral'], tmp_dir,
-                                                     db_handler, get_viral_description,
-                                                     start_time, 'viral', bit_score_threshold,
-                                                     rbh_bit_score_threshold, threads, verbose))
+        viral_hits = do_blast_style_search(query_db, db_locs['viral'], tmp_dir, start_time, 'viral',
+                                           bit_score_threshold, rbh_bit_score_threshold, threads, verbose)
+        annotation_list.append(get_descriptions(viral_hits, db_handler, get_viral_description, 'viral'))
 
     # Get peptidase hits
     if db_locs.get('peptidase') is not None:
-        annotation_list.append(do_blast_style_search(query_db, db_locs['peptidase'], tmp_dir,
-                                                     db_handler, get_peptidase_description,
-                                                     start_time, 'peptidase', bit_score_threshold,
-                                                     rbh_bit_score_threshold, threads, verbose))
+        peptidase_hits = do_blast_style_search(query_db, db_locs['peptidase'], tmp_dir, start_time, 'peptidase',
+                                               bit_score_threshold, rbh_bit_score_threshold, threads, verbose)
+        annotation_list.append(get_descriptions(peptidase_hits, db_handler, get_peptidase_description, 'peptidase',))
 
     # Get pfam hits
     if db_locs.get('pfam') is not None:
         print('%s: Getting hits from pfam' % str(datetime.now() - start_time))
-        annotation_list.append(run_mmseqs_profile_search(query_db, db_locs['pfam'], tmp_dir, output_prefix='pfam',
-                                                         db_handler=db_handler, threads=threads, verbose=verbose))
-
+        pfam_res = run_mmseqs_profile_search(query_db, db_locs['pfam'], tmp_dir, output_prefix='pfam', threads=threads,
+                                             verbose=verbose)
+        annotation_list.append(get_pfam_descriptions(pfam_res, 'pfam', db_handler))
     # use hmmer to detect cazy ids using dbCAN
     if db_locs.get('dbcan') is not None:
         print('%s: Getting hits from dbCAN' % str(datetime.now() - start_time))
-        annotation_list.append(run_hmmscan_dbcan(gene_faa, db_locs['dbcan'], tmp_dir, threads, db_handler=db_handler,
-                                                 verbose=verbose))
+        dbcan_results = run_hmmscan(gene_faa, db_locs['dbcan'], tmp_dir, 'cazy', threads, verbose)
+        dbcan_results_sig = get_significant_hits(dbcan_results, get_sig)
+        annotation_list.append(get_dbcan_descriptions(dbcan_results_sig, db_handler))
 
     # use hmmer to detect vogdbs
     if db_locs.get('vogdb') is not None:
         print('%s: Getting hits from VOGDB' % str(datetime.now() - start_time))
-        annotation_list.append(run_hmmscan_vogdb(gene_faa, db_locs['vogdb'], tmp_dir, threads, db_handler=db_handler,
-                                                 verbose=verbose))
-
+        vogdb_results = run_hmmscan(gene_faa, db_locs['vogdb'], tmp_dir, 'vogdb', threads, verbose)
+        vogdb_results_sig = get_significant_hits(vogdb_results, get_sig, True)
+        annotation_list.append(get_vogdb_descriptions(vogdb_results_sig, db_handler))
     for db_name, db_loc in custom_db_locs.items():
         print('%s: Getting hits from %s' % (str(datetime.now() - start_time), db_name))
         get_custom_description = partial(get_basic_description, db_name=db_name)
-        annotation_list.append(do_blast_style_search(query_db, db_loc, tmp_dir, db_handler,
-                                                     get_custom_description, start_time, db_name,
-                                                     bit_score_threshold, rbh_bit_score_threshold, threads,
-                                                     verbose))
+        custom_hits = do_blast_style_search(query_db, db_loc, tmp_dir, start_time, db_name, bit_score_threshold,
+                                            rbh_bit_score_threshold, threads, verbose)
+        annotation_list.append(get_descriptions_multigrep(custom_hits, db_loc, get_custom_description, db_name,
+                                                          tmp_dir))
 
     # heme regulatory motif count
     annotation_list.append(pd.Series(count_motifs(gene_faa, '(C..CH)'), name='heme_regulatory_motif_count'))
@@ -895,7 +900,8 @@ def annotate_fastas(fasta_locs, output_dir, db_locs, db_handler, min_contig_size
     mkdir(tmp_dir)
 
     # setup custom databases to be searched
-    custom_db_locs = process_custom_dbs(custom_fasta_loc, custom_db_name, path.join(tmp_dir, 'custom_dbs'), threads, verbose)
+    custom_db_locs = process_custom_dbs(custom_fasta_loc, custom_db_name, path.join(tmp_dir, 'custom_dbs'), threads,
+                                        verbose)
     print('%s: Retrieved database locations and descriptions' % (str(datetime.now() - start_time)))
 
     # iterate over list of fastas and annotate each individually
