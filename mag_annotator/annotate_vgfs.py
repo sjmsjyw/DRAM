@@ -8,7 +8,7 @@ from skbio.io import read as read_sequence
 from skbio.io import write as write_sequence
 
 from mag_annotator.database_handler import DatabaseHandler
-from mag_annotator.annotate_bins import annotate_fastas
+from mag_annotator.annotate_bins import filter_db_locs, annotate_fastas
 from mag_annotator.utils import get_database_locs, get_ids_from_annotation
 
 VIRSORTER_COLUMN_NAMES = ['gene_name', 'start_position', 'end_position', 'length', 'strandedness',
@@ -277,6 +277,7 @@ def annotate_vgfs(input_fasta, virsorter_affi_contigs=None, output_dir='.', min_
     # get database locations
     db_locs = get_database_locs()
     db_handler = DatabaseHandler(db_locs['description_db'])
+    db_locs_anno = filter_db_locs(db_locs, low_mem_mode, use_uniref, db_handler.get_database_names())
 
     # split sequences into seperate fastas
     mkdir(output_dir)
@@ -291,9 +292,9 @@ def annotate_vgfs(input_fasta, virsorter_affi_contigs=None, output_dir='.', min_
             contig_locs.append(contig_loc)
 
     # annotate vMAGs
-    annotations = annotate_fastas(contig_locs, output_dir, db_locs, db_handler, min_contig_size, bit_score_threshold,
-                                  rbh_bit_score_threshold, custom_db_name, custom_fasta_loc, use_uniref, skip_trnascan,
-                                  keep_tmp_dir, low_mem_mode, start_time, threads, verbose)
+    annotations = annotate_fastas(contig_locs, output_dir, db_locs_anno, db_handler, min_contig_size,
+                                  bit_score_threshold, rbh_bit_score_threshold, custom_db_name, custom_fasta_loc,
+                                  use_uniref, skip_trnascan, keep_tmp_dir, low_mem_mode, start_time, threads, verbose)
     print('%s: Annotations complete, processing annotations' % str(datetime.now() - start_time))
 
     # setting up scoring viral genes
@@ -321,7 +322,10 @@ def annotate_vgfs(input_fasta, virsorter_affi_contigs=None, output_dir='.', min_
     # get metabolic flags
     scaffold_length_dict = {seq.metadata['id']: len(seq) for seq in read_sequence(input_fasta, format='fasta')}
     metabolic_genes = set(genome_summary_form.index)
-    annotations['is_transposon'] = [is_transposon(i) for i in annotations['pfam_hits']]
+    if 'pfam_hits' in annotations:
+        annotations['is_transposon'] = [is_transposon(i) for i in annotations['pfam_hits']]
+    else:
+        annotations['is_transposon'] = False
 
     amgs = get_amg_ids(amg_database_frame)
     verified_amgs = get_amg_ids(amg_database_frame.loc[amg_database_frame.verified])
