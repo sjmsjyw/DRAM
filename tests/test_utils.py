@@ -11,13 +11,11 @@ from mag_annotator.pull_sequences import get_genes_from_identifiers
 
 def test_run_process():
     run_process(['echo', 'Hello', 'World'], verbose=True)
-    assert True
 
 
 @pytest.fixture()
 def mmseqs_db_dir(tmpdir):
-    output_loc = tmpdir.mkdir('make_mmseqs_db_test')
-    return output_loc
+    return tmpdir.mkdir('make_mmseqs_db_test')
 
 
 @pytest.fixture()
@@ -35,9 +33,9 @@ def merge_test_dir(tmpdir):
 
 @pytest.fixture()
 def files_to_merge_no_header(merge_test_dir):
-    files_to_merge = list()
+    files_to_merge = []
     for i in range(3):
-        merge_file = merge_test_dir.join('merge_test.%s.txt' % str(i))
+        merge_file = merge_test_dir.join(f'merge_test.{str(i)}.txt')
         merge_file.write('test%s\n' % str(i))
         files_to_merge.append(merge_file)
     return files_to_merge
@@ -45,10 +43,10 @@ def files_to_merge_no_header(merge_test_dir):
 
 @pytest.fixture()
 def files_to_merge_w_header(merge_test_dir):
-    files_to_merge = list()
+    files_to_merge = []
     header = 'gene_name'
     for i in range(3):
-        merge_file = merge_test_dir.join('merge_test_w_header.%s.txt' % str(i))
+        merge_file = merge_test_dir.join(f'merge_test_w_header.{str(i)}.txt')
         merge_file.write('%s\ntest%s\n' % (header, str(i)))
         files_to_merge.append(merge_file)
     return files_to_merge

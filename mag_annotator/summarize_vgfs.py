@@ -27,7 +27,7 @@ defaultdict_list = partial(defaultdict, list)
 def add_custom_ms(annotations, distillate_form):
     metabolic_genes = set(distillate_form.index)
 
-    new_amg_flags = list()
+    new_amg_flags = []
     for gene, row in annotations.iterrows():
         if 'M' in row['amg_flags']:
             new_amg_flags.append(row['amg_flags'])
@@ -42,7 +42,7 @@ def add_custom_ms(annotations, distillate_form):
 
 def filter_to_amgs(annotations, max_aux=4, remove_transposons=True, remove_fs=False):
     # def filter_to_amgs(annotations, max_aux=4, remove_transposons=True, remove_fs=False, remove_js=False):
-    potential_amgs = list()
+    potential_amgs = []
     for gene, row in annotations.iterrows():
         amg_flags = row['amg_flags']
         if not pd.isna(amg_flags):
@@ -69,27 +69,29 @@ def get_strand_switches(strandedness):
 
 def make_viral_stats_table(annotations, potential_amgs, groupby_column='scaffold'):
     amg_counts = potential_amgs.groupby(groupby_column).size()
-    viral_stats_series = list()
+    viral_stats_series = []
     for scaffold, frame in annotations.groupby(groupby_column):
         # get virus information
         virus_categories = re.findall(r'-cat_\d$', scaffold)
         if len(virus_categories) > 0:
             virus_category = int(virus_categories[0].split('_')[-1])  # viral category
-            virus_prophage = virus_category in [4, 5]  # virus is prophage
+            virus_prophage = virus_category in {4, 5}
         else:
             virus_category = None
             virus_prophage = None
         virus_circular = len(re.findall(r'-circular-cat_\d$', scaffold)) == 1  # virus is circular
         virus_num_genes = len(frame)  # number of genes on viral contig
         virus_strand_switches = get_strand_switches(frame.strandedness)  # number of strand switches
-        if scaffold in amg_counts:
-            virus_number_amgs = amg_counts[scaffold]  # number of potential amgs
-        else:
-            virus_number_amgs = 0
+        virus_number_amgs = amg_counts[scaffold] if scaffold in amg_counts else 0
         virus_transposase_present = sum(frame.is_transposon) > 0  # transposase on contig
         # virus_j_present = sum(['J' in i if not pd.isna(i) else False for i in frame.amg_flags]) > 0
-        virus_j_present = sum([i == 'Xh' if not pd.isna(i) else False
-                               for i in frame['vogdb_categories']]) / frame.shape[0]
+        virus_j_present = (
+            sum(
+                False if pd.isna(i) else i == 'Xh'
+                for i in frame['vogdb_categories']
+            )
+            / frame.shape[0]
+        )
         virus_data = pd.Series([virus_category, virus_circular, virus_prophage, virus_num_genes, virus_strand_switches,
                                 virus_number_amgs, virus_transposase_present, virus_j_present],
                                index=VIRUS_STATS_COLUMNS, name=scaffold)
@@ -103,7 +105,7 @@ def make_viral_stats_table(annotations, potential_amgs, groupby_column='scaffold
 
 
 def make_viral_distillate(potential_amgs, genome_summary_frame):
-    rows = list()
+    rows = []
     for gene, row in potential_amgs.iterrows():
         gene_ids = get_ids_from_row(row) & set(genome_summary_frame.index)
         if len(gene_ids) > 0:
@@ -114,13 +116,23 @@ def make_viral_distillate(potential_amgs, genome_summary_frame):
                                  gene_summary['sheet'], gene_summary['header'], gene_summary['subheader'],
                                  gene_summary['module'], row['auxiliary_score'], row['amg_flags']])
                 else:
-                    for sub_gene_id, sub_gene_summary in gene_summary.iterrows():
-                        rows.append([gene, row['scaffold'], gene_id, sub_gene_summary['gene_description'],
-                                     sub_gene_summary['sheet'], sub_gene_summary['header'],
-                                     sub_gene_summary['subheader'], sub_gene_summary['module'],
-                                     row['auxiliary_score'], row['amg_flags']])
+                    rows.extend(
+                        [
+                            gene,
+                            row['scaffold'],
+                            gene_id,
+                            sub_gene_summary['gene_description'],
+                            sub_gene_summary['sheet'],
+                            sub_gene_summary['header'],
+                            sub_gene_summary['subheader'],
+                            sub_gene_summary['module'],
+                            row['auxiliary_score'],
+                            row['amg_flags'],
+                        ]
+                        for sub_gene_id, sub_gene_summary in gene_summary.iterrows()
+                    )
         else:
-            warnings.warn("No distillate information found for gene %s" % gene)
+            warnings.warn(f"No distillate information found for gene {gene}")
             rows.append([gene, row['scaffold'], '', '', '', '', '', '', row['auxiliary_score'],
                          row['amg_flags']])
     return pd.DataFrame(rows, columns=VIRAL_DISTILLATE_COLUMNS)
@@ -138,12 +150,28 @@ def make_amg_count_column(potential_amgs, vgf_order=None):
     # build count column
     amg_counts = pd.DataFrame(Counter(potential_amgs.scaffold).items(), columns=['Contig Name', 'Number'])
     amg_counts['AMG Count'] = 'AMG Count'
-    text = alt.Chart(amg_counts, width=HEATMAP_CELL_WIDTH+10, height=HEATMAP_CELL_HEIGHT*len(amg_counts)).encode(
-                     x=alt.X('AMG Count', title=None, axis=alt.Axis(labelLimit=0, labelAngle=90)),
-                     y=alt.Y('Contig Name', title=None, axis=alt.Axis(labelLimit=0), sort=vgf_order),
-                     text='Number'
-                    ).mark_text()
-    return text
+    return (
+        alt.Chart(
+            amg_counts,
+            width=HEATMAP_CELL_WIDTH + 10,
+            height=HEATMAP_CELL_HEIGHT * len(amg_counts),
+        )
+        .encode(
+            x=alt.X(
+                'AMG Count',
+                title=None,
+                axis=alt.Axis(labelLimit=0, labelAngle=90),
+            ),
+            y=alt.Y(
+                'Contig Name',
+                title=None,
+                axis=alt.Axis(labelLimit=0),
+                sort=vgf_order,
+            ),
+            text='Number',
+        )
+        .mark_text()
+    )
 
 
 def make_viral_functional_df(annotations, genome_summary_frame, groupby_column='scaffold'):
@@ -155,15 +183,15 @@ def make_viral_functional_df(annotations, genome_summary_frame, groupby_column='
             for id_ in id_list:
                 vgf_to_id_dict[vgf][id_].append(gene)
     # build long from data frame
-    rows = list()
+    rows = []
     for category, category_frame in genome_summary_frame.groupby('sheet'):
         for header, header_frame in category_frame.groupby('module'):
             header_id_set = set(header_frame.index.to_list())
-            curr_rows = list()
+            curr_rows = []
             for vgf, id_dict in vgf_to_id_dict.items():
                 present_in_bin = False
-                functions_present = list()
-                amgs_present = list()
+                functions_present = []
+                amgs_present = []
                 for id_, amgs in id_dict.items():
                     if id_ in header_id_set:
                         present_in_bin = True
@@ -171,15 +199,15 @@ def make_viral_functional_df(annotations, genome_summary_frame, groupby_column='
                         amgs_present += amgs
                 curr_rows.append([category, header, ', '.join(amgs_present), ', '.join(functions_present), vgf,
                                   present_in_bin])
-            if sum([i[-1] for i in curr_rows]) > 0:
+            if sum(i[-1] for i in curr_rows) > 0:
                 rows += curr_rows
     return pd.DataFrame(rows, columns=VIRAL_LIQUOR_HEADERS)
 
 
 def make_viral_functional_heatmap(functional_df, vgf_order=None):
     # build heatmaps
-    charts = list()
-    for i, (group, frame) in enumerate(functional_df.groupby('Category', sort=False)):
+    charts = []
+    for group, frame in functional_df.groupby('Category', sort=False):
         # set variables for chart
         function_order = get_ordered_uniques(list(frame['Function']))
         num_vgfs_in_frame = len(set(frame['Contig Name']))
@@ -204,9 +232,7 @@ def make_viral_functional_heatmap(functional_df, vgf_order=None):
             width=chart_width,
             height=chart_height)
         charts.append(c)
-    # merge and return
-    function_heatmap = alt.hconcat(*charts, spacing=5)
-    return function_heatmap
+    return alt.hconcat(*charts, spacing=5)
 
 
 # def summarize_vgfs(input_file, output_dir, groupby_column='scaffold', max_auxiliary_score=3, remove_transposons=False,
@@ -227,23 +253,27 @@ def summarize_vgfs(input_file, output_dir, groupby_column='scaffold', max_auxili
         genome_summary_form = pd.concat([genome_summary_form, custom_distillate_form])
         # add M's from custom distillate
         annotations['amg_flags'] = add_custom_ms(annotations, custom_distillate_form)
-    print('%s: Retrieved database locations and descriptions' % (str(datetime.now() - start_time)))
+    print(
+        f'{str(datetime.now() - start_time)}: Retrieved database locations and descriptions'
+    )
 
     # get potential AMGs
     # potential_amgs = filter_to_amgs(annotations.fillna(''), max_aux=max_auxiliary_score,
     #                                 remove_transposons=remove_transposons, remove_fs=remove_fs, remove_js=remove_js)
     potential_amgs = filter_to_amgs(annotations, max_aux=max_auxiliary_score,
                                     remove_transposons=remove_transposons, remove_fs=remove_fs)
-    print('%s: Determined potential amgs' % (str(datetime.now() - start_time)))
+    print(f'{str(datetime.now() - start_time)}: Determined potential amgs')
 
     # make distillate
     viral_genome_stats = make_viral_stats_table(annotations, potential_amgs, groupby_column)
     viral_genome_stats.to_csv(path.join(output_dir, 'vMAG_stats.tsv'), sep='\t')
-    print('%s: Calculated viral genome statistics' % (str(datetime.now() - start_time)))
+    print(
+        f'{str(datetime.now() - start_time)}: Calculated viral genome statistics'
+    )
 
     viral_distillate = make_viral_distillate(potential_amgs, genome_summary_form)
     viral_distillate.to_csv(path.join(output_dir, 'amg_summary.tsv'), sep='\t', index=None)
-    print('%s: Generated AMG summary' % (str(datetime.now() - start_time)))
+    print(f'{str(datetime.now() - start_time)}: Generated AMG summary')
 
     # make liquor
     vgf_order = make_vgf_order(potential_amgs)
@@ -251,5 +281,5 @@ def summarize_vgfs(input_file, output_dir, groupby_column='scaffold', max_auxili
     viral_function_df = make_viral_functional_df(potential_amgs, genome_summary_form, groupby_column=groupby_column)
     viral_functional_heatmap = make_viral_functional_heatmap(viral_function_df, vgf_order)
     alt.hconcat(amg_column, viral_functional_heatmap, spacing=5).save(path.join(output_dir, 'product.html'))
-    print('%s: Generated product heatmap' % (str(datetime.now() - start_time)))
-    print("%s: Completed distillation" % str(datetime.now() - start_time))
+    print(f'{str(datetime.now() - start_time)}: Generated product heatmap')
+    print(f"{str(datetime.now() - start_time)}: Completed distillation")

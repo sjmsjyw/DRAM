@@ -46,15 +46,15 @@ class DatabaseHandler:
         self.description_loc = config.get('description_db')
         if self.description_loc is None:
             self.session = None
-            warnings.warn('Database does not exist at path %s' % self.description_loc)
+            warnings.warn(f'Database does not exist at path {self.description_loc}')
         elif not path.exists(self.description_loc):
             self.session = None
-            warnings.warn('Database does not exist at path %s' % self.description_loc)
+            warnings.warn(f'Database does not exist at path {self.description_loc}')
         else:
             self.start_db_session()
 
     def start_db_session(self):
-        engine = create_engine('sqlite:///%s' % self.description_loc)
+        engine = create_engine(f'sqlite:///{self.description_loc}')
         db_session = sessionmaker(bind=engine)
         self.session = db_session()
 
@@ -73,12 +73,13 @@ class DatabaseHandler:
 
     def get_descriptions(self, ids, db_name):
         description_class = TABLE_NAME_TO_CLASS_DICT[db_name]
-        descriptions = list()
+        descriptions = []
         for chunk in divide_chunks(list(ids), 499):
             descriptions += self.session.query(description_class).filter(description_class.id.in_(chunk)).all()
         if len(descriptions) == 0:
-            warn("No descriptions were found for your id's. Does this %s look like an id from %s" % (list(ids)[0],
-                                                                                                     db_name))
+            warn(
+                f"No descriptions were found for your id's. Does this {list(ids)[0]} look like an id from {db_name}"
+            )
         return {i.id: i.description for i in descriptions}
 
     @staticmethod
@@ -97,7 +98,8 @@ class DatabaseHandler:
             elif path.isfile(loc):  # if location exists return full path
                 return path.realpath(loc)
             else:  # if the location doesn't exist then raise error
-                raise ValueError("Database location does not exist: %s" % loc)
+                raise ValueError(f"Database location does not exist: {loc}")
+
         self.db_locs['kegg'] = check_exists_and_add_to_location_dict(kegg_db_loc, self.db_locs.get('kegg'))
         self.db_locs['kofam'] = check_exists_and_add_to_location_dict(kofam_hmm_loc, self.db_locs.get('kofam'))
         self.db_locs['kofam_ko_list'] = check_exists_and_add_to_location_dict(kofam_ko_list_loc,
@@ -113,26 +115,26 @@ class DatabaseHandler:
         self.db_locs['vogdb'] = check_exists_and_add_to_location_dict(vogdb_db_loc, self.db_locs.get('vogdb'))
 
         self.db_description_locs['pfam_hmm_dat'] = \
-            check_exists_and_add_to_location_dict(pfam_hmm_dat, self.db_description_locs.get('pfam_hmm_dat'))
+                check_exists_and_add_to_location_dict(pfam_hmm_dat, self.db_description_locs.get('pfam_hmm_dat'))
         self.db_description_locs['dbcan_fam_activities'] = \
-            check_exists_and_add_to_location_dict(dbcan_fam_activities,
+                check_exists_and_add_to_location_dict(dbcan_fam_activities,
                                                   self.db_description_locs.get('dbcan_fam_activities'))
         self.db_description_locs['vog_annotations'] = \
-            check_exists_and_add_to_location_dict(vog_annotations, self.db_description_locs.get('vog_annotations'))
+                check_exists_and_add_to_location_dict(vog_annotations, self.db_description_locs.get('vog_annotations'))
 
         self.dram_sheet_locs['genome_summary_form'] = \
-            check_exists_and_add_to_location_dict(genome_summary_form_loc,
+                check_exists_and_add_to_location_dict(genome_summary_form_loc,
                                                   self.dram_sheet_locs.get('genome_summary_form'))
         self.dram_sheet_locs['module_step_form'] = \
-            check_exists_and_add_to_location_dict(module_step_form_loc, self.dram_sheet_locs.get('module_step_form'))
+                check_exists_and_add_to_location_dict(module_step_form_loc, self.dram_sheet_locs.get('module_step_form'))
         self.dram_sheet_locs['etc_module_database'] = \
-            check_exists_and_add_to_location_dict(etc_module_database_loc,
+                check_exists_and_add_to_location_dict(etc_module_database_loc,
                                                   self.dram_sheet_locs.get('etc_module_database'))
         self.dram_sheet_locs['function_heatmap_form'] = \
-            check_exists_and_add_to_location_dict(function_heatmap_form_loc,
+                check_exists_and_add_to_location_dict(function_heatmap_form_loc,
                                                   self.dram_sheet_locs.get('function_heatmap_form'))
         self.dram_sheet_locs['amg_database'] = \
-            check_exists_and_add_to_location_dict(amg_database_loc, self.dram_sheet_locs.get('amg_database'))
+                check_exists_and_add_to_location_dict(amg_database_loc, self.dram_sheet_locs.get('amg_database'))
 
         self.description_loc = check_exists_and_add_to_location_dict(description_db_loc, self.description_loc)
         self.start_db_session()
@@ -151,7 +153,7 @@ class DatabaseHandler:
 
     @staticmethod
     def make_header_dict_from_mmseqs_db(mmseqs_db):
-        mmseqs_headers_handle = open('%s_h' % mmseqs_db, 'rb')
+        mmseqs_headers_handle = open(f'{mmseqs_db}_h', 'rb')
         mmseqs_headers = mmseqs_headers_handle.read().decode(errors='ignore')
         mmseqs_headers = [i.strip() for i in mmseqs_headers.strip().split('\n\x00') if len(i) > 0]
         mmseqs_headers_split = []
@@ -165,7 +167,7 @@ class DatabaseHandler:
                 mmseqs_ids_unique.add(header['id'])
             else:
                 mmseqs_ids_not_unique.add(header['id'])
-        if len(mmseqs_ids_not_unique) > 0:
+        if mmseqs_ids_not_unique:
             warnings.warn(f'There are {len(mmseqs_ids_not_unique)} non unique headers in {mmseqs_db}! You should definitly investigate this!')
         return mmseqs_headers_split
 
@@ -176,8 +178,8 @@ class DatabaseHandler:
         else:
             f = open(pfam_hmm_dat).read()
         entries = f.strip().split('//')
-        description_list = list()
-        for i, entry in enumerate(entries):
+        description_list = []
+        for entry in entries:
             if len(entry) > 0:
                 entry = entry.split('\n')
                 ascession = None
@@ -194,8 +196,8 @@ class DatabaseHandler:
     @staticmethod
     def process_dbcan_descriptions(dbcan_fam_activities):
         f = open(dbcan_fam_activities)
-        description_list = list()
-        for line in f.readlines():
+        description_list = []
+        for line in f:
             if not line.startswith('#') and len(line.strip()) != 0:
                 line = line.strip().split()
                 if len(line) == 1:
@@ -210,10 +212,13 @@ class DatabaseHandler:
     @staticmethod
     def process_vogdb_descriptions(vog_annotations):
         annotations_table = pd.read_csv(vog_annotations, sep='\t', index_col=0)
-        annotations_list = [{'id': vog, 'description': '%s; %s' % (row['ConsensusFunctionalDescription'],
-                                                                   row['FunctionalCategory'])}
-                            for vog, row in annotations_table.iterrows()]
-        return annotations_list
+        return [
+            {
+                'id': vog,
+                'description': f"{row['ConsensusFunctionalDescription']}; {row['FunctionalCategory']}",
+            }
+            for vog, row in annotations_table.iterrows()
+        ]
 
     # TODO: Make option to build on description database that already exists?
     def populate_description_db(self, output_loc=None, update_config=True):
@@ -256,38 +261,43 @@ class DatabaseHandler:
     def print_database_locations(self):
         # search databases
         print('Processed search databases')
-        print('KEGG db: %s' % self.db_locs.get('kegg'))
-        print('KOfam db: %s' % self.db_locs.get('kofam'))
-        print('KOfam KO list: %s' % self.db_locs.get('kofam_ko_list'))
-        print('UniRef db: %s' % self.db_locs.get('uniref'))
-        print('Pfam db: %s' % self.db_locs.get('pfam'))
-        print('dbCAN db: %s' % self.db_locs.get('dbcan'))
-        print('RefSeq Viral db: %s' % self.db_locs.get('viral'))
-        print('MEROPS peptidase db: %s' % self.db_locs.get('peptidase'))
-        print('VOGDB db: %s' % self.db_locs.get('vogdb'))
+        print(f"KEGG db: {self.db_locs.get('kegg')}")
+        print(f"KOfam db: {self.db_locs.get('kofam')}")
+        print(f"KOfam KO list: {self.db_locs.get('kofam_ko_list')}")
+        print(f"UniRef db: {self.db_locs.get('uniref')}")
+        print(f"Pfam db: {self.db_locs.get('pfam')}")
+        print(f"dbCAN db: {self.db_locs.get('dbcan')}")
+        print(f"RefSeq Viral db: {self.db_locs.get('viral')}")
+        print(f"MEROPS peptidase db: {self.db_locs.get('peptidase')}")
+        print(f"VOGDB db: {self.db_locs.get('vogdb')}")
         print()
         # database descriptions used during description db population
         print('Descriptions of search database entries')
-        print('Pfam hmm dat: %s' % self.db_description_locs.get('pfam_hmm_dat'))
-        print('dbCAN family activities: %s' % self.db_description_locs.get('dbcan_fam_activities'))
-        print('VOG annotations: %s' % self.db_description_locs.get('vog_annotations'))
+        print(f"Pfam hmm dat: {self.db_description_locs.get('pfam_hmm_dat')}")
+        print(
+            f"dbCAN family activities: {self.db_description_locs.get('dbcan_fam_activities')}"
+        )
+        print(f"VOG annotations: {self.db_description_locs.get('vog_annotations')}")
         print()
         # description database
-        print('Description db: %s' % self.description_loc)
+        print(f'Description db: {self.description_loc}')
         print()
         # DRAM sheets
         print('DRAM distillation sheets')
-        print('Genome summary form: %s' % self.dram_sheet_locs.get('genome_summary_form'))
-        print('Module step form: %s' % self.dram_sheet_locs.get('module_step_form'))
-        print('ETC module database: %s' % self.dram_sheet_locs.get('etc_module_database'))
-        print('Function heatmap form: %s' % self.dram_sheet_locs.get('function_heatmap_form'))
-        print('AMG database: %s' % self.dram_sheet_locs.get('amg_database'))
+        print(
+            f"Genome summary form: {self.dram_sheet_locs.get('genome_summary_form')}"
+        )
+        print(f"Module step form: {self.dram_sheet_locs.get('module_step_form')}")
+        print(
+            f"ETC module database: {self.dram_sheet_locs.get('etc_module_database')}"
+        )
+        print(
+            f"Function heatmap form: {self.dram_sheet_locs.get('function_heatmap_form')}"
+        )
+        print(f"AMG database: {self.dram_sheet_locs.get('amg_database')}")
 
     def filter_db_locs(self, low_mem_mode=False, use_uniref=True, use_vogdb=True, master_list=None):
-        if master_list is None:
-            dbs_to_use = self.db_locs.keys()
-        else:
-            dbs_to_use = master_list
+        dbs_to_use = self.db_locs.keys() if master_list is None else master_list
         # filter out dbs for low mem mode
         if low_mem_mode:
             if ('kofam' not in self.db_locs) or ('kofam_ko_list' not in self.db_locs):

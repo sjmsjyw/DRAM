@@ -133,7 +133,7 @@ class VOGDBDescription(Base):
 
 
 def create_description_db(db_loc):
-    engine = create_engine('sqlite:///%s' % db_loc)
+    engine = create_engine(f'sqlite:///{db_loc}')
     Base.metadata.create_all(engine)
 
 

@@ -63,20 +63,28 @@ def get_best_hits(query_db, target_db, output_dir='.', query_prefix='query', tar
     """
     # make query to target db
     tmp_dir = path.join(output_dir, 'tmp')
-    query_target_db = path.join(output_dir, '%s_%s.mmsdb' % (query_prefix, target_prefix))
+    query_target_db = path.join(
+        output_dir, f'{query_prefix}_{target_prefix}.mmsdb'
+    )
     run_process(['mmseqs', 'search', query_db, target_db, query_target_db, tmp_dir, '--threads', str(threads)],
                 verbose=verbose)
     # filter query to target db to only best hit
-    query_target_db_top = path.join(output_dir, '%s_%s.tophit.mmsdb' % (query_prefix, target_prefix))
+    query_target_db_top = path.join(
+        output_dir, f'{query_prefix}_{target_prefix}.tophit.mmsdb'
+    )
     run_process(['mmseqs', 'filterdb', query_target_db, query_target_db_top, '--extract-lines', '1'], verbose=verbose)
     # filter query to target db to only hits with min threshold
-    query_target_db_top_filt = path.join(output_dir, '%s_%s.tophit.minbitscore%s.mmsdb'
-                                         % (query_prefix, target_prefix, bit_score_threshold))
+    query_target_db_top_filt = path.join(
+        output_dir,
+        f'{query_prefix}_{target_prefix}.tophit.minbitscore{bit_score_threshold}.mmsdb',
+    )
     run_process(['mmseqs', 'filterdb', '--filter-column', '2', '--comparison-operator', 'ge', '--comparison-value',
                  str(bit_score_threshold), '--threads', str(threads), query_target_db_top, query_target_db_top_filt],
                 verbose=verbose)
     # convert results to blast outformat 6
-    forward_output_loc = path.join(output_dir, '%s_%s_hits.b6' % (query_prefix, target_prefix))
+    forward_output_loc = path.join(
+        output_dir, f'{query_prefix}_{target_prefix}_hits.b6'
+    )
     run_process(['mmseqs', 'convertalis', query_db, target_db, query_target_db_top_filt, forward_output_loc,
                  '--threads', str(threads)], verbose=verbose)
     return forward_output_loc
@@ -87,18 +95,30 @@ def get_reciprocal_best_hits(query_db, target_db, output_dir='.', query_prefix='
     """Take results from best hits and use for a reciprocal best hits search"""
     # TODO: Make it take query_target_db as a parameter
     # create subset for second search
-    query_target_db_top_filt = path.join(output_dir, '%s_%s.tophit.minbitscore%s.mmsdb'
-                                         % (query_prefix, target_prefix, bit_score_threshold))  # I DON'T LIKE THIS
-    query_target_db_filt_top_swapped = path.join(output_dir, '%s_%s.minbitscore%s.tophit.swapped.mmsdb'
-                                                 % (query_prefix, target_prefix, bit_score_threshold))
+    query_target_db_top_filt = path.join(
+        output_dir,
+        f'{query_prefix}_{target_prefix}.tophit.minbitscore{bit_score_threshold}.mmsdb',
+    )
+    query_target_db_filt_top_swapped = path.join(
+        output_dir,
+        f'{query_prefix}_{target_prefix}.minbitscore{bit_score_threshold}.tophit.swapped.mmsdb',
+    )
     # swap queries and targets in results database
     run_process(['mmseqs', 'swapdb', query_target_db_top_filt, query_target_db_filt_top_swapped, '--threads',
                  str(threads)], verbose=verbose)
-    target_db_filt = path.join(output_dir, '%s.filt.mmsdb' % target_prefix)
+    target_db_filt = path.join(output_dir, f'{target_prefix}.filt.mmsdb')
     # create a subdatabase of the target database with the best hits as well as the index of the target database
     run_process(['mmseqs', 'createsubdb', query_target_db_filt_top_swapped, target_db, target_db_filt], verbose=verbose)
-    run_process(['mmseqs', 'createsubdb', query_target_db_filt_top_swapped, '%s_h' % target_db,
-                 '%s_h' % target_db_filt], verbose=verbose)
+    run_process(
+        [
+            'mmseqs',
+            'createsubdb',
+            query_target_db_filt_top_swapped,
+            f'{target_db}_h',
+            f'{target_db_filt}_h',
+        ],
+        verbose=verbose,
+    )
 
     return get_best_hits(target_db_filt, query_db, output_dir, target_prefix, query_prefix, rbh_bit_score_threshold,
                          threads, verbose)
@@ -117,13 +137,15 @@ def process_reciprocal_best_hits(forward_output_loc, reverse_output_loc, target_
         rbh = False
         if row.tId in reverse_hits.index:
             rbh = row.name == reverse_hits.loc[row.tId].tId
-        return {'%s_hit' % target_prefix:      row.tId,
-                '%s_RBH' % target_prefix:      rbh,
-                '%s_identity' % target_prefix: row.seqIdentity,
-                '%s_bitScore' % target_prefix: row.bitScore,
-                '%s_eVal' % target_prefix:     row.eVal,
-                'index':                       row.name
-                }
+        return {
+            f'{target_prefix}_hit': row.tId,
+            f'{target_prefix}_RBH': rbh,
+            f'{target_prefix}_identity': row.seqIdentity,
+            f'{target_prefix}_bitScore': row.bitScore,
+            f'{target_prefix}_eVal': row.eVal,
+            'index': row.name,
+        }
+
     hits = forward_hits.apply(check_hit, axis=1, result_type='expand')
     # NOTE these lines may not be necessary
     hits.set_index('index', drop=True, inplace=True)
@@ -133,8 +155,8 @@ def process_reciprocal_best_hits(forward_output_loc, reverse_output_loc, target_
 
 def get_kegg_description(kegg_hits, header_dict):
     """Gets the KEGG IDs, and full KEGG hits from list of KEGG IDs for output in annotations"""
-    gene_description = list()
-    ko_list = list()
+    gene_description = []
+    ko_list = []
     for kegg_hit in kegg_hits.kegg_hit:
         header = header_dict[kegg_hit]
         gene_description.append(header)
@@ -151,14 +173,14 @@ def get_kegg_description(kegg_hits, header_dict):
 
 def get_uniref_description(uniref_hits, header_dict):
     """Gets UniRef ID's, taxonomy and full string from list of UniRef IDs for output in annotations"""
-    gene_description = list()
-    uniref_list = list()
-    gene_taxonomy = list()
+    gene_description = []
+    uniref_list = []
+    gene_taxonomy = []
     for uniref_hit in uniref_hits.uniref_hit:
         header = header_dict[uniref_hit]
         gene_description.append(header)
         uniref_list.append(header[header.find('RepID=') + 6:])
-        gene_taxonomy.append(re.search(r'Tax=(.*?) (\S*?)=', header).group(1))
+        gene_taxonomy.append(re.search(r'Tax=(.*?) (\S*?)=', header)[1])
     new_df = pd.DataFrame([uniref_list, gene_description, gene_taxonomy],
                           index=['uniref_id', 'uniref_hit', 'uniref_taxonomy'],
                           columns=uniref_hits.index)
@@ -167,22 +189,28 @@ def get_uniref_description(uniref_hits, header_dict):
 
 def get_basic_description(hits, header_dict, db_name='viral'):
     """Get viral gene full descriptions based on headers (text before first space)"""
-    hit_list = list()
-    description = list()
-    for hit in hits['%s_hit' % db_name]:
+    hit_list = []
+    description = []
+    for hit in hits[f'{db_name}_hit']:
         header = header_dict[hit]
         hit_list.append(hit)
         description.append(header)
-    new_df = pd.DataFrame([hit_list, description],
-                          index=['%s_id' % db_name, '%s_hit' % db_name],
-                          columns=hits.index)
-    return pd.concat([new_df.transpose(), hits.drop('%s_hit' % db_name, axis=1)], axis=1, sort=False)
+    new_df = pd.DataFrame(
+        [hit_list, description],
+        index=[f'{db_name}_id', f'{db_name}_hit'],
+        columns=hits.index,
+    )
+    return pd.concat(
+        [new_df.transpose(), hits.drop(f'{db_name}_hit', axis=1)],
+        axis=1,
+        sort=False,
+    )
 
 
 def get_peptidase_description(peptidase_hits, header_dict):
-    peptidase_list = list()
-    peptidase_family = list()
-    peptidase_descirption = list()
+    peptidase_list = []
+    peptidase_family = []
+    peptidase_descirption = []
     for peptidase_hit in peptidase_hits.peptidase_hit:
         header = header_dict[peptidase_hit]
         peptidase_list.append(peptidase_hit)
@@ -197,42 +225,45 @@ def run_mmseqs_profile_search(query_db, pfam_profile, output_loc, output_prefix=
                               threads=10, verbose=False):
     """Use mmseqs to run a search against pfam, currently keeping all hits and not doing any extra filtering"""
     tmp_dir = path.join(output_loc, 'tmp')
-    output_db = path.join(output_loc, '%s.mmsdb' % output_prefix)
+    output_db = path.join(output_loc, f'{output_prefix}.mmsdb')
     run_process(['mmseqs', 'search', query_db, pfam_profile, output_db, tmp_dir, '-k', '5', '-s', '7', '--threads',
                  str(threads)], verbose=verbose)
-    output_loc = path.join(output_loc, '%s_output.b6' % output_prefix)
+    output_loc = path.join(output_loc, f'{output_prefix}_output.b6')
     run_process(['mmseqs', 'convertalis', query_db, pfam_profile, output_db, output_loc], verbose=verbose)
     pfam_results = pd.read_csv(output_loc, sep='\t', header=None, names=BOUTFMT6_COLUMNS)
-    if pfam_results.shape[0] > 0:
-        pfam_dict = dict()
-        if db_handler is not None:
-            pfam_descriptions = db_handler.get_descriptions(set(pfam_results.tId), '%s_description' % output_prefix)
+    if pfam_results.shape[0] <= 0:
+        return pd.Series(name=f'{output_prefix}_hits')
+    pfam_dict = {}
+    pfam_descriptions = (
+        db_handler.get_descriptions(
+            set(pfam_results.tId), f'{output_prefix}_description'
+        )
+        if db_handler is not None
+        else {}
+    )
+    for gene, pfam_frame in pfam_results.groupby('qId'):
+        if len(pfam_descriptions) < 1:
+            pfam_dict[gene] = '; '.join(pfam_frame.tId)
         else:
-            pfam_descriptions = {}
-        for gene, pfam_frame in pfam_results.groupby('qId'):
-            if len(pfam_descriptions) < 1:
-                pfam_dict[gene] = '; '.join(pfam_frame.tId)
-            else:
-                pfam_dict[gene] = '; '.join(['%s [%s]' % (pfam_descriptions[ascession], ascession)
-                                             for ascession in pfam_frame.tId])
-        return pd.Series(pfam_dict, name='%s_hits' % output_prefix)
-    else:
-        return pd.Series(name='%s_hits' % output_prefix)
+            pfam_dict[gene] = '; '.join(
+                [
+                    f'{pfam_descriptions[ascession]} [{ascession}]'
+                    for ascession in pfam_frame.tId
+                ]
+            )
+    return pd.Series(pfam_dict, name=f'{output_prefix}_hits')
 
 
 def get_sig_row(row):
     """Check if hmm match is significant, based on dbCAN described parameters"""
     tstart, tend, tlen, evalue = row[['target_start', 'target_end', 'target_length', 'full_evalue']].values
     perc_cov = (tend - tstart)/tlen
-    if perc_cov >= .35 and evalue <= 1e-15:
-        return True
-    else:
-        return False
+    return perc_cov >= .35 and evalue <= 1e-15
 
 
 # TODO: refactor following to methods to a shared run hmm step and individual get description steps
 def parse_hmmsearch_domtblout(file):
-    df_lines = list()
+    df_lines = []
     for line in open(file):
         if not line.startswith('#'):
             line = line.split()
@@ -246,7 +277,7 @@ def parse_hmmsearch_domtblout(file):
 
 # continue exit()
 def sig_scores(hits:pd.DataFrame, score_db:pd.DataFrame) -> pd.DataFrame:
-    is_sig = list()
+    is_sig = []
     for i, frame in hits.groupby('target_id'):
         row = score_db.loc[i]
         if row['score_type'] == 'domain':
@@ -259,10 +290,7 @@ def sig_scores(hits:pd.DataFrame, score_db:pd.DataFrame) -> pd.DataFrame:
             raise ValueError(row['score_type'])
         frame = frame.loc[score.astype(float) > float(row.threshold)]
         is_sig.append(frame)
-    if len(is_sig) > 0:
-        return pd.concat(is_sig)
-    else:
-        return pd.DataFrame()
+    return pd.concat(is_sig) if is_sig else pd.DataFrame()
 
 
 def dbcan_hmmscan_formater(hits:pd.DataFrame,  db_name:str, db_handler=None):
@@ -316,7 +344,7 @@ def kofam_hmmscan_formater(hits:pd.DataFrame, hmm_info_path:str=None, use_dbcan2
     # if there are any significant results then parse to dataframe
     if len(hits_sig) == 0:
         return pd.DataFrame()
-    kegg_dict = dict()
+    kegg_dict = {}
     for gene, frame in hits_sig.groupby('query_id'):
         # TODO: take top hit for full length genes and all hits for domains?
         # TODO: if top hit then give all e-value and bitscore info
@@ -325,8 +353,12 @@ def kofam_hmmscan_formater(hits:pd.DataFrame, hmm_info_path:str=None, use_dbcan2
             ko_id = best_hit['target_id'].iloc[0]
             kegg_dict[gene] = [ko_id, hmm_info.loc[ko_id, 'definition']]
         else:
-            kegg_dict[gene] = [','.join([i for i in frame.target_id]),
-                               '; '.join([hmm_info.loc[i, 'definition'] for i in frame.target_id])]
+            kegg_dict[gene] = [
+                ','.join(list(frame.target_id)),
+                '; '.join(
+                    [hmm_info.loc[i, 'definition'] for i in frame.target_id]
+                ),
+            ]
     return pd.DataFrame(kegg_dict, index=['ko_id', 'kegg_hit']).transpose()
 
 
@@ -348,9 +380,12 @@ def vogdb_hmmscan_formater(hits:pd.DataFrame,  db_name:str, db_handler=None):
             index=[desc_col]).T
         categories = descriptions[desc_col].apply(lambda x: x.split('; ')[-1])
         descriptions[f"{db_name}_categories"] = categories.apply(
-            lambda x: ';'.join(set([x[i:i + 2] for i in range(0, len(x), 2)])))
+            lambda x: ';'.join({x[i : i + 2] for i in range(0, len(x), 2)})
+        )
         descriptions['target_id'] = descriptions.index
-        hits_df = pd.merge(hits_best[['query_id', 'target_id']], descriptions, on=f'target_id')
+        hits_df = pd.merge(
+            hits_best[['query_id', 'target_id']], descriptions, on='target_id'
+        )
     hits_df.set_index('query_id', inplace=True, drop=True)
     hits_df.rename_axis(None, inplace=True)
     hits_df.rename(columns={'target_id': f"{db_name}_id"}, inplace=True)
@@ -372,7 +407,7 @@ def get_gene_data(fasta_loc):
     """Take the prodigal gene headers and get the scaffold that it came from
     Based on idba_ud 'scaffold_#' scaffold names with gene name after
     """
-    df_dict = dict()
+    df_dict = {}
     for seq in read_sequence(fasta_loc, format='fasta'):
         split_label = seq.metadata['id'].split('_')
         scaffold = '_'.join(split_label[:-1])
@@ -392,7 +427,7 @@ def get_unannotated(fasta_loc, annotations):
 
 def assign_grades(annotations):
     """Grade genes based on reverse best hits to KEGG, UniRef and Pfam"""
-    grades = dict()
+    grades = {}
     for gene, row in annotations.iterrows():
         if row.get('kegg_RBH') is True:
             rank = 'A'
@@ -416,39 +451,41 @@ def generate_annotated_fasta(input_fasta, annotations, verbosity='short', name=N
     for seq in read_sequence(input_fasta, format='fasta'):
         annotation = annotations.loc[seq.metadata['id']]
         if 'rank' in annotations.columns and verbosity == 'short':
-            annotation_str = 'rank: %s' % annotation['rank']
+            annotation_str = f"rank: {annotation['rank']}"
             if annotation['rank'] == 'A':
-                annotation_str += '; %s (db=%s)' % (annotation.kegg_hit, 'kegg')
+                annotation_str += f'; {annotation.kegg_hit} (db=kegg)'
             elif annotation['rank'] == 'B':
-                annotation_str += '; %s (db=%s)' % (annotation.uniref_hit, 'uniref')
+                annotation_str += f'; {annotation.uniref_hit} (db=uniref)'
             elif annotation['rank'] == 'C':
                 if 'kegg_hit' in annotation:
-                    annotation_str += '; %s (db=%s)' % (annotation.kegg_hit, 'kegg')
+                    annotation_str += f'; {annotation.kegg_hit} (db=kegg)'
                 if 'uniref_hit' in annotation:
-                    annotation_str += '; %s (db=%s)' % (annotation.uniref_hit, 'uniref')
+                    annotation_str += f'; {annotation.uniref_hit} (db=uniref)'
             elif annotation['rank'] == 'D':
-                annotation_str += '; %s (db=%s)' % (annotation.pfam_hits, 'pfam')
-            else:
-                pass
+                annotation_str += f'; {annotation.pfam_hits} (db=pfam)'
         else:
             annotation_list = []
             if 'rank' in annotations.columns:
-                annotation_list += ['rank: %s' % annotation['rank']]
-            if 'kegg_hit' in annotations.columns:
-                if not pd.isna(annotation.kegg_hit):
-                    annotation_list += ['%s (db=%s)' % (annotation.kegg_hit, 'kegg')]
-            if 'uniref_hit' in annotations.columns:
-                if not pd.isna(annotation.uniref_hit):
-                    annotation_list += ['%s (db=%s)' % (annotation.uniref_hit, 'uniref')]
-            if 'pfam_hits' in annotations.columns:
-                if not pd.isna(annotation.pfam_hits):
-                    annotation_list += ['%s (db=%s)' % (annotation.pfam_hits, 'pfam')]
-            if 'bin_taxonomy' in annotations.columns:
-                if not pd.isna(annotation.bin_taxonomy):
-                    annotation_list += [annotation.bin_taxonomy]
+                annotation_list += [f"rank: {annotation['rank']}"]
+            if 'kegg_hit' in annotations.columns and not pd.isna(
+                annotation.kegg_hit
+            ):
+                annotation_list += [f'{annotation.kegg_hit} (db=kegg)']
+            if 'uniref_hit' in annotations.columns and not pd.isna(
+                annotation.uniref_hit
+            ):
+                annotation_list += [f'{annotation.uniref_hit} (db=uniref)']
+            if 'pfam_hits' in annotations.columns and not pd.isna(
+                annotation.pfam_hits
+            ):
+                annotation_list += [f'{annotation.pfam_hits} (db=pfam)']
+            if 'bin_taxonomy' in annotations.columns and not pd.isna(
+                annotation.bin_taxonomy
+            ):
+                annotation_list += [annotation.bin_taxonomy]
             annotation_str = '; '.join(annotation_list)
         if name is not None:
-            seq.metadata['id'] = '%s_%s' % (name, seq.metadata['id'])
+            seq.metadata['id'] = f"{name}_{seq.metadata['id']}"
         seq.metadata['description'] = annotation_str
         yield seq
 
@@ -462,7 +499,7 @@ def create_annotated_fasta(input_fasta, annotations, output_fasta, verbosity='sh
 def generate_renamed_fasta(input_fasta, prefix):
     """For use with scaffolds files, merges together bins with fasta name added as a prefix to the file"""
     for seq in read_sequence(input_fasta, format='fasta'):
-        seq.metadata['id'] = '%s_%s' % (prefix, seq.metadata['id'])
+        seq.metadata['id'] = f"{prefix}_{seq.metadata['id']}"
         yield seq
 
 
@@ -483,23 +520,24 @@ def annotate_gff(input_gff, output_gff, annotations, prefix=None):
             old_scaffold = line.split('\t')[0]
             match = re.search(r'ID=\d*_\d*;', line)
             gene_number = match.group().split('_')[-1][:-1]
-            old_gene_name = '%s_%s' % (old_scaffold, gene_number)
+            old_gene_name = f'{old_scaffold}_{gene_number}'
             if prefix is not None:  # add prefix to line name and gene name if given
-                line = '%s_%s' % (prefix, line)
-                gene_name = '%s_%s' % (prefix, old_gene_name)
+                line = f'{prefix}_{line}'
+                gene_name = f'{prefix}_{old_gene_name}'
             else:
                 gene_name = old_gene_name
-            line = re.sub(r'ID=\d*_\d*;', 'ID=%s;' % gene_name, line)
+            line = re.sub(r'ID=\d*_\d*;', f'ID={gene_name};', line)
             # get annotations to add from annotations file and add to end of line
             annotations_to_add = {strip_endings(i, ['_id']): annotations.loc[old_gene_name, i]
                                   for i in annotations.columns if i.endswith('_id')}
-            database_information = ['Dbxref="%s:%s"' % (key.strip(), value.strip().replace(':', '_'))
-                                    for key, values in annotations_to_add.items()
-                                    if not pd.isna(values)
-                                    for value in values.split('; ')
-                                    if value != '']
-            if len(database_information) > 0:
-                line += '%s;' % ';'.join(database_information)
+            if database_information := [
+                f"""Dbxref="{key.strip()}:{value.strip().replace(':', '_')}\""""
+                for key, values in annotations_to_add.items()
+                if not pd.isna(values)
+                for value in values.split('; ')
+                if value != ''
+            ]:
+                line += f"{';'.join(database_information)};"
         o.write('%s\n' % line)
 
 
@@ -547,8 +585,8 @@ def make_gbk_from_gff_and_fasta(gff_loc='genes.gff', fasta_loc='scaffolds.fna', 
 
 
 def get_dups(columns):
-    keep = list()
-    seen = list()
+    keep = []
+    seen = []
     for column in columns:
         if column in seen:
             keep.append(False)
@@ -587,16 +625,15 @@ def run_barrnap(fasta, fasta_name, threads=10, verbose=True):
                                verbose=verbose)
     raw_rrna_table = pd.read_csv(io.StringIO(raw_rrna_str), skiprows=1, sep='\t', header=None,
                                  names=RAW_RRNA_COLUMNS, index_col=0)
-    rrna_table_rows = list()
+    rrna_table_rows = []
     for gene, row in raw_rrna_table.iterrows():
         rrna_row_dict = {entry.split('=')[0]: entry.split('=')[1] for entry in row['note'].split(';')}
         rrna_table_rows.append([fasta_name, row.begin, row.end, row.strand, rrna_row_dict['Name'].replace('_', ' '),
                                 row['e-value'], rrna_row_dict.get('note', '')])
     if len(raw_rrna_table) > 0:
         return pd.DataFrame(rrna_table_rows, index=raw_rrna_table.index, columns=RRNA_COLUMNS).reset_index()
-    else:
-        warnings.warn('No rRNAs were detected, no rrnas.tsv file will be created.')
-        return None
+    warnings.warn('No rRNAs were detected, no rrnas.tsv file will be created.')
+    return None
 
 
 def make_trnas_interval(scaffold, row, i):
@@ -608,17 +645,32 @@ def make_trnas_interval(scaffold, row, i):
         begin = row['End']
         end = row['Begin']
         strand = '-'
-    metadata = {'source': 'tRNAscan-SE', 'type': 'tRNA', 'score': row['Score'], 'strand': strand, 'phase': 0,
-                'ID': '%s_tRNA_%s' % (scaffold, i), 'codon': row['Codon'], 'product': 'tRNA-%s' % row['Type']}
+    metadata = {
+        'source': 'tRNAscan-SE',
+        'type': 'tRNA',
+        'score': row['Score'],
+        'strand': strand,
+        'phase': 0,
+        'ID': f'{scaffold}_tRNA_{i}',
+        'codon': row['Codon'],
+        'product': f"tRNA-{row['Type']}",
+    }
     if not pd.isna(row['Note']):
         metadata['Note'] = row['Note']
     return begin, end, metadata
 
 
 def make_rrnas_interval(scaffold, row, i):
-    metadata = {'source': 'barrnap', 'type': 'rRNA', 'score': row['e-value'], 'strand': row['strand'], 'phase': 0,
-                'ID': '%s_rRNA_%s' % (scaffold, i), 'product': '%s ribosomal RNA' % row['type'].split()[0],
-                'gene': row['type']}
+    metadata = {
+        'source': 'barrnap',
+        'type': 'rRNA',
+        'score': row['e-value'],
+        'strand': row['strand'],
+        'phase': 0,
+        'ID': f'{scaffold}_rRNA_{i}',
+        'product': f"{row['type'].split()[0]} ribosomal RNA",
+        'gene': row['type'],
+    }
     if not pd.isna(row['note']):
         metadata['Note'] = row['note']
     return row['begin'], row['end'], metadata
@@ -630,12 +682,9 @@ def add_intervals_to_gff(annotations_loc, gff_loc, len_dict, interval_function, 
     # get fasta length dict so we can merge, I'd love to be able to get this from somewhere else
     annotation_frame = pd.read_csv(annotations_loc, sep='\t')
     # process trnas to intervals
-    annotation_dict = dict()
+    annotation_dict = {}
     for scaffold, frame in annotation_frame.groupby(groupby_column):
-        if type(scaffold) is not str:
-            scaffold = str(scaffold)
-        else:
-            scaffold = scaffold.strip()
+        scaffold = str(scaffold) if type(scaffold) is not str else scaffold.strip()
         im = IntervalMetadata(len_dict[scaffold])
         for i, (_, row) in enumerate(frame.iterrows()):
             i += 1
@@ -662,29 +711,39 @@ def do_blast_style_search(query_db, target_db, working_dir, db_handler, formater
                           verbose=False):
     """A convenience function to do a blast style reciprocal best hits search"""
     # Get kegg hits
-    print('%s: Getting forward best hits from %s' % (str(datetime.now() - start_time), db_name))
+    print(
+        f'{str(datetime.now() - start_time)}: Getting forward best hits from {db_name}'
+    )
     forward_hits = get_best_hits(query_db, target_db, working_dir, 'gene', db_name, bit_score_threshold,
                                  threads, verbose=verbose)
     if stat(forward_hits).st_size == 0:
         return pd.DataFrame()
-    print('%s: Getting reverse best hits from %s' % (str(datetime.now() - start_time), db_name))
+    print(
+        f'{str(datetime.now() - start_time)}: Getting reverse best hits from {db_name}'
+    )
     reverse_hits = get_reciprocal_best_hits(query_db, target_db, working_dir, 'gene', db_name,
                                             bit_score_threshold, rbh_bit_score_threshold, threads, verbose=verbose)
     hits = process_reciprocal_best_hits(forward_hits, reverse_hits, db_name)
-    print('%s: Getting descriptions of hits from %s' % (str(datetime.now() - start_time), db_name))
-    if '%s_description' % db_name in db_handler.get_database_names():
-        header_dict = db_handler.get_descriptions(hits['%s_hit' % db_name], '%s_description' % db_name)
+    print(
+        f'{str(datetime.now() - start_time)}: Getting descriptions of hits from {db_name}'
+    )
+    if f'{db_name}_description' in db_handler.get_database_names():
+        header_dict = db_handler.get_descriptions(
+            hits[f'{db_name}_hit'], f'{db_name}_description'
+        )
     else:
-        header_dict = multigrep(hits['%s_hit' % db_name], '%s_h' % target_db, '\x00', working_dir)
+        header_dict = multigrep(
+            hits[f'{db_name}_hit'], f'{target_db}_h', '\x00', working_dir
+        )
     hits = formater(hits, header_dict)
     return hits
 
 
 def count_motifs(gene_faa, motif='(C..CH)'):
-    motif_count_dict = dict()
-    for seq in read_sequence(gene_faa, format='fasta'):
-        motif_count_dict[seq.metadata['id']] = len(list(seq.find_with_regex(motif)))
-    return motif_count_dict
+    return {
+        seq.metadata['id']: len(list(seq.find_with_regex(motif)))
+        for seq in read_sequence(gene_faa, format='fasta')
+    }
 
 
 def strip_endings(text, suffixes: list):
@@ -705,9 +764,9 @@ def process_custom_dbs(custom_fasta_loc, custom_db_name, output_dir, threads=1, 
     if len(custom_fasta_loc) != len(custom_db_name):
         raise ValueError('Lengths of custom db fasta list and custom db name list must be the same.')
     custom_dbs = {custom_db_name[i]: custom_fasta_loc[i] for i in range(len(custom_db_name))}
-    custom_db_locs = dict()
+    custom_db_locs = {}
     for db_name, db_loc in custom_dbs.items():
-        custom_db_loc = path.join(output_dir, '%s.custom.mmsdb' % db_name)
+        custom_db_loc = path.join(output_dir, f'{db_name}.custom.mmsdb')
         make_mmseqs_db(db_loc, custom_db_loc, threads=threads, verbose=verbose)
         custom_db_locs[db_name] = custom_db_loc
     return custom_db_locs
@@ -720,7 +779,7 @@ def process_custom_hmms(custom_hmm_loc, custom_hmm_name, verbose=False):
         custom_hmm_name = ()
     if len(custom_hmm_loc) != len(custom_hmm_name):
         raise ValueError('Lengths of custom db hmm list and custom hmm db name list must be the same.')
-    custom_hmm_locs = dict()
+    custom_hmm_locs = {}
     for i in range(len(custom_hmm_name)):
         run_process(['hmmpress', '-f', custom_hmm_loc[i]], verbose=verbose)  # all are pressed just in case
         custom_hmm_locs[custom_hmm_name[i]] = custom_hmm_loc[i]
@@ -765,11 +824,13 @@ def annotate_orfs(gene_faa, db_handler, tmp_dir, start_time, custom_db_locs=(), 
                   custom_hmm_cutoffs_locs=(), bit_score_threshold=60, rbh_bit_score_threshold=350,
                   kofam_use_dbcan2_thresholds=False, threads=10, verbose=False):
     # run reciprocal best hits searches
-    print('%s: Turning genes from prodigal to mmseqs2 db' % str(datetime.now() - start_time))
+    print(
+        f'{str(datetime.now() - start_time)}: Turning genes from prodigal to mmseqs2 db'
+    )
     query_db = path.join(tmp_dir, 'gene.mmsdb')
     make_mmseqs_db(gene_faa, query_db, create_index=True, threads=threads, verbose=verbose)
 
-    annotation_list = list()
+    annotation_list = []
 
     # Get kegg hits
     if db_handler.db_locs.get('kegg') is not None:
@@ -780,7 +841,7 @@ def annotate_orfs(gene_faa, db_handler, tmp_dir, start_time, custom_db_locs=(), 
                                                      'kegg', bit_score_threshold, rbh_bit_score_threshold, threads,
                                                      verbose))
     elif db_handler.db_locs.get('kofam') is not None and db_handler.db_locs.get('kofam_ko_list') is not None:
-        print('%s: Getting hits from kofam' % str(datetime.now() - start_time))
+        print(f'{str(datetime.now() - start_time)}: Getting hits from kofam')
         annotation_list.append(run_hmmscan(genes_faa=gene_faa,
                                            db_loc=db_handler.db_locs['kofam'],
                                            db_name='kofam',
@@ -820,14 +881,14 @@ def annotate_orfs(gene_faa, db_handler, tmp_dir, start_time, custom_db_locs=(), 
 
     # Get pfam hits
     if db_handler.db_locs.get('pfam') is not None:
-        print('%s: Getting hits from pfam' % str(datetime.now() - start_time))
+        print(f'{str(datetime.now() - start_time)}: Getting hits from pfam')
         annotation_list.append(run_mmseqs_profile_search(query_db, db_handler.db_locs['pfam'], tmp_dir,
                                                          output_prefix='pfam', db_handler=db_handler, threads=threads,
                                                          verbose=verbose))
 
     # use hmmer to detect cazy ids using dbCAN
     if db_handler.db_locs.get('dbcan') is not None:
-        print('%s: Getting hits from dbCAN' % str(datetime.now() - start_time))
+        print(f'{str(datetime.now() - start_time)}: Getting hits from dbCAN')
         annotation_list.append(run_hmmscan(genes_faa=gene_faa,
                                            db_loc=db_handler.db_locs['dbcan'],
                                            db_name='cazy',
@@ -841,7 +902,7 @@ def annotate_orfs(gene_faa, db_handler, tmp_dir, start_time, custom_db_locs=(), 
 
     # use hmmer to detect vogdbs
     if db_handler.db_locs.get('vogdb') is not None:
-        print('%s: Getting hits from VOGDB' % str(datetime.now() - start_time))
+        print(f'{str(datetime.now() - start_time)}: Getting hits from VOGDB')
         annotation_list.append(run_hmmscan(genes_faa=gene_faa,
                                            db_loc=db_handler.db_locs['vogdb'],
                                            db_name='vogdb',
@@ -854,7 +915,7 @@ def annotate_orfs(gene_faa, db_handler, tmp_dir, start_time, custom_db_locs=(), 
                                            )))
 
     for db_name, db_loc in custom_db_locs.items():
-        print('%s: Getting hits from %s' % (str(datetime.now() - start_time), db_name))
+        print(f'{str(datetime.now() - start_time)}: Getting hits from {db_name}')
         get_custom_description = partial(get_basic_description, db_name=db_name)
         annotation_list.append(do_blast_style_search(query_db, db_loc, tmp_dir, db_handler,
                                                      get_custom_description, start_time, db_name,
@@ -862,24 +923,27 @@ def annotate_orfs(gene_faa, db_handler, tmp_dir, start_time, custom_db_locs=(), 
                                                      verbose))
 
     # get hits to hmm style custom databases
-    for hmm_name, hmm_loc in custom_hmm_locs.items():
-        annotation_list.append(run_hmmscan(genes_faa=gene_faa,
-                                           db_loc=hmm_loc,
-                                           db_name=hmm_name,
-                                           threads=threads,
-                                           output_loc=tmp_dir,
-                                           formater=partial(
-                                               generic_hmmscan_formater,
-                                               db_name=hmm_name,
-                                               hmm_info_path=custom_hmm_cutoffs_locs.get(hmm_name),
-                                               top_hit=True
-                                           )))
-
+    annotation_list.extend(
+        run_hmmscan(
+            genes_faa=gene_faa,
+            db_loc=hmm_loc,
+            db_name=hmm_name,
+            threads=threads,
+            output_loc=tmp_dir,
+            formater=partial(
+                generic_hmmscan_formater,
+                db_name=hmm_name,
+                hmm_info_path=custom_hmm_cutoffs_locs.get(hmm_name),
+                top_hit=True,
+            ),
+        )
+        for hmm_name, hmm_loc in custom_hmm_locs.items()
+    )
     # heme regulatory motif count
     annotation_list.append(pd.Series(count_motifs(gene_faa, '(C..CH)'), name='heme_regulatory_motif_count'))
 
     # merge dataframes
-    print('%s: Merging ORF annotations' % str(datetime.now() - start_time))
+    print(f'{str(datetime.now() - start_time)}: Merging ORF annotations')
     annotations = pd.concat(annotation_list, axis=1, sort=False)
 
     # get scaffold data and assign grades
@@ -965,7 +1029,7 @@ def annotate_fasta(fasta_loc, fasta_name, output_dir, db_handler, min_contig_siz
         rrna_loc = None
 
     # make genbank file
-    current_gbk = path.join(output_dir, '%s.gbk' % fasta_name)
+    current_gbk = path.join(output_dir, f'{fasta_name}.gbk')
     make_gbk_from_gff_and_fasta(renamed_gffs, renamed_scaffolds, annotated_faa, current_gbk)
 
     if not keep_tmp_dir:
@@ -993,14 +1057,16 @@ def annotate_fastas(fasta_locs, output_dir, db_handler, min_contig_size=5000, pr
                                         verbose)
     custom_hmm_locs = process_custom_hmms(custom_hmm_loc, custom_hmm_name)
     custom_hmm_cutoffs_locs= process_custom_hmm_cutoffs(custom_hmm_cutoffs_loc, custom_hmm_name)
-    print('%s: Retrieved database locations and descriptions' % (str(datetime.now() - start_time)))
+    print(
+        f'{str(datetime.now() - start_time)}: Retrieved database locations and descriptions'
+    )
 
     # iterate over list of fastas and annotate each individually
-    annotations_list = list()
+    annotations_list = []
     for fasta_loc in fasta_locs:
         # get name of file e.g. /home/shaffemi/my_genome.fa -> my_genome
         fasta_name = get_fasta_name(fasta_loc)
-        print('%s: Annotating %s' % (str(datetime.now() - start_time), fasta_name))
+        print(f'{str(datetime.now() - start_time)}: Annotating {fasta_name}')
         fasta_dir = path.join(tmp_dir, fasta_name)
         mkdir(fasta_dir)
         annotations_list.append(
@@ -1008,7 +1074,9 @@ def annotate_fastas(fasta_locs, output_dir, db_handler, min_contig_size=5000, pr
                            custom_db_locs, custom_hmm_locs, custom_hmm_cutoffs_locs, bit_score_threshold,
                            rbh_bit_score_threshold, kofam_use_dbcan2_thresholds, skip_trnascan, start_time, threads,
                            rename_bins, keep_tmp_dir, verbose))
-    print('%s: Annotations complete, processing annotations' % str(datetime.now() - start_time))
+    print(
+        f'{str(datetime.now() - start_time)}: Annotations complete, processing annotations'
+    )
 
     all_annotations = merge_annotations(annotations_list, output_dir)
 
@@ -1024,12 +1092,12 @@ def annotate_bins_cmd(input_fasta, output_dir='.', min_contig_size=5000, prodiga
                       kofam_use_dbcan2_thresholds=False, skip_trnascan=False, gtdb_taxonomy=(), checkm_quality=(),
                       keep_tmp_dir=True, low_mem_mode=False, threads=10, verbose=True):
     fasta_locs = [j for i in input_fasta for j in glob(i)]
-    if len(fasta_locs) == 0:
-        raise ValueError('Given fasta locations return no paths: %s' % input_fasta)
+    if not fasta_locs:
+        raise ValueError(f'Given fasta locations return no paths: {input_fasta}')
     fasta_names = [get_fasta_name(i) for i in fasta_locs]
     if len(fasta_names) != len(set(fasta_names)):
         raise ValueError('Genome file names must be unique. At least one name appears twice in this search.')
-    print('%s fastas found' % len(fasta_locs))
+    print(f'{len(fasta_locs)} fastas found')
     rename_bins = True
     annotate_bins(list(set(fasta_locs)), output_dir, min_contig_size, prodigal_mode, trans_table, bit_score_threshold,
                   rbh_bit_score_threshold, custom_db_name, custom_fasta_loc, custom_hmm_name, custom_hmm_loc,
@@ -1047,12 +1115,12 @@ def annotate_bins(fasta_locs, output_dir='.', min_contig_size=2500, prodigal_mod
                   rename_bins=True, keep_tmp_dir=True, low_mem_mode=False, threads=10, verbose=True):
     # set up
     start_time = datetime.now()
-    print('%s: Annotation started' % str(datetime.now()))
+    print(f'{str(datetime.now())}: Annotation started')
 
     # check inputs
     prodigal_modes = ['train', 'meta', 'single']
     if prodigal_mode not in prodigal_modes:
-        raise ValueError('Prodigal mode must be one of %s.' % ', '.join(prodigal_modes))
+        raise ValueError(f"Prodigal mode must be one of {', '.join(prodigal_modes)}.")
     elif prodigal_mode in ['normal', 'single']:
         warnings.warn('When running prodigal in single mode your bins must have long contigs (average length >3 Kbp), '
                       'be long enough (total length > 500 Kbp) and have very low contamination in order for prodigal '
@@ -1078,8 +1146,8 @@ def annotate_bins(fasta_locs, output_dir='.', min_contig_size=2500, prodigal_mod
     # if given add taxonomy information
     if len(gtdb_taxonomy) > 0:
         gtdb_taxonomy = pd.concat([pd.read_csv(i, sep='\t', index_col=0) for i in gtdb_taxonomy])
-        taxonomy = list()
-        taxonomy_missing_bins = list()
+        taxonomy = []
+        taxonomy_missing_bins = []
         for i in all_annotations.fasta:
             # add taxonomy
             if i in gtdb_taxonomy.index:
@@ -1088,16 +1156,18 @@ def annotate_bins(fasta_locs, output_dir='.', min_contig_size=2500, prodigal_mod
                 taxonomy.append(i)
                 taxonomy_missing_bins.append(i)
         for i in set(taxonomy_missing_bins):
-            warnings.warn('Bin %s was not found in taxonomy file, replaced with bin name.' % i)
+            warnings.warn(
+                f'Bin {i} was not found in taxonomy file, replaced with bin name.'
+            )
         all_annotations['bin_taxonomy'] = taxonomy
     # if given add quality information
     if len(checkm_quality) > 0:
         checkm_quality = pd.concat([pd.read_csv(i, sep='\t', index_col=0) for i in checkm_quality])
         checkm_quality.index = [strip_endings(i, ['.fa', '.fasta', '.fna']) for i in checkm_quality.index]
 
-        completeness = list()
-        contamination = list()
-        quality_missing_bins = list()
+        contamination = []
+        quality_missing_bins = []
+        completeness = []
         for i in all_annotations.fasta:
             # add completeness and contamination
             if i in checkm_quality.index:
@@ -1108,13 +1178,14 @@ def annotate_bins(fasta_locs, output_dir='.', min_contig_size=2500, prodigal_mod
                 contamination.append(100)
                 quality_missing_bins.append(i)
             for j in set(quality_missing_bins):
-                warnings.warn('Bin %s was not found in quality file, '
-                              'replaced with completeness 0 and contamination 100.' % j)
+                warnings.warn(
+                    f'Bin {j} was not found in quality file, replaced with completeness 0 and contamination 100.'
+                )
         all_annotations['bin_completeness'] = completeness
         all_annotations['bin_contamination'] = contamination
     all_annotations.to_csv(path.join(output_dir, 'annotations.tsv'), sep='\t')
 
-    print("%s: Completed annotations" % str(datetime.now() - start_time))
+    print(f"{str(datetime.now() - start_time)}: Completed annotations")
 
 
 def annotate_called_genes_cmd(input_faa, output_dir='.', bit_score_threshold=60, rbh_bit_score_threshold=350,
@@ -1124,8 +1195,8 @@ def annotate_called_genes_cmd(input_faa, output_dir='.', bit_score_threshold=60,
                               low_mem_mode=False, threads=10, verbose=True):
     fasta_locs = glob(input_faa)
     if len(fasta_locs) == 0:
-        raise ValueError('Given fasta locations returns no paths: %s' % input_faa)
-    print('%s fastas found' % len(fasta_locs))
+        raise ValueError(f'Given fasta locations returns no paths: {input_faa}')
+    print(f'{len(fasta_locs)} fastas found')
     annotate_called_genes(fasta_locs, output_dir, bit_score_threshold, rbh_bit_score_threshold, custom_db_name,
                           custom_fasta_loc, custom_hmm_loc, custom_hmm_name, custom_hmm_cutoffs_loc, use_uniref, use_vogdb,
                           kofam_use_dbcan2_thresholds, rename_genes, keep_tmp_dir, low_mem_mode, threads, verbose)
@@ -1138,7 +1209,7 @@ def annotate_called_genes(fasta_locs, output_dir='.', bit_score_threshold=60, rb
                           threads=10, verbose=True):
     # set up
     start_time = datetime.now()
-    print('%s: Annotation started' % str(datetime.now()))
+    print(f'{str(datetime.now())}: Annotation started')
 
     # get database locations
     db_handler = DatabaseHandler()
@@ -1153,11 +1224,13 @@ def annotate_called_genes(fasta_locs, output_dir='.', bit_score_threshold=60, rb
                                         verbose)
     custom_hmm_locs = process_custom_hmms(custom_hmm_loc, custom_hmm_name)
     custom_hmm_cutoffs_locs= process_custom_hmm_cutoffs(custom_hmm_cutoffs_loc, custom_hmm_name)
-    print('%s: Retrieved database locations and descriptions' % (str(datetime.now() - start_time)))
+    print(
+        f'{str(datetime.now() - start_time)}: Retrieved database locations and descriptions'
+    )
 
     # annotate
-    annotation_locs = list()
-    faa_locs = list()
+    annotation_locs = []
+    faa_locs = []
     for fasta_loc in fasta_locs:
         # set up
         fasta_name = get_fasta_name(fasta_loc)
@@ -1191,7 +1264,7 @@ def annotate_called_genes(fasta_locs, output_dir='.', bit_score_threshold=60, rb
     if not keep_tmp_dir:
         rmtree(tmp_dir)
 
-    print("%s: Completed annotations" % str(datetime.now() - start_time))
+    print(f"{str(datetime.now() - start_time)}: Completed annotations")
 
 
 def merge_annotations(annotations_list, output_dir, write_annotations=False):
@@ -1204,11 +1277,19 @@ def merge_annotations(annotations_list, output_dir, write_annotations=False):
     merge_files([i.genes_faa_loc for i in annotations_list if i is not None], path.join(output_dir, 'genes.faa'))
     merge_files([i.scaffolds_loc for i in annotations_list if i is not None], path.join(output_dir, 'scaffolds.fna'))
     merge_files([i.gff_loc for i in annotations_list if i is not None], path.join(output_dir, 'genes.gff'), True)
-    trnas_locs = [i.trnas_loc for i in annotations_list if i is not None if i.trnas_loc is not None]
-    if len(trnas_locs) > 0:
+    if trnas_locs := [
+        i.trnas_loc
+        for i in annotations_list
+        if i is not None
+        if i.trnas_loc is not None
+    ]:
         merge_files(trnas_locs, path.join(output_dir, 'trnas.tsv'), True)
-    rrnas_locs = [i.rrnas_loc for i in annotations_list if i is not None if i.rrnas_loc is not None]
-    if len(rrnas_locs) > 0:
+    if rrnas_locs := [
+        i.rrnas_loc
+        for i in annotations_list
+        if i is not None
+        if i.rrnas_loc is not None
+    ]:
         merge_files(rrnas_locs, path.join(output_dir, 'rrnas.tsv'), True)
 
     # make output gbk dir
@@ -1218,7 +1299,7 @@ def merge_annotations(annotations_list, output_dir, write_annotations=False):
         if anno is not None:
             # TODO: make annotate_fasta generate a genbank dir and then copy it's contents, get rid of Annotation.name
             if path.isfile(anno.gbk_loc):
-                copy2(anno.gbk_loc, path.join(gbk_dir, '%s.gbk' % anno.name))
+                copy2(anno.gbk_loc, path.join(gbk_dir, f'{anno.name}.gbk'))
             else:
                 for gbk_loc in glob(path.join(anno.gbk_loc, '*.gbk')):
                     copy2(gbk_loc, gbk_dir)
@@ -1230,9 +1311,9 @@ def merge_annotations(annotations_list, output_dir, write_annotations=False):
 
 def merge_annotations_cmd(input_dirs, output_dir):
     # make Annotation objects per directory
-    annotations_list = list()
+    annotations_list = []
     for i, annotation_dir in enumerate(glob(input_dirs)):
-        name = 'annotation_%s' % i
+        name = f'annotation_{i}'
         scaffolds = path.join(annotation_dir, 'scaffolds.fna')
         genes_faa = path.join(annotation_dir, 'genes.faa')
         genes_fna = path.join(annotation_dir, 'genes.fna')
@@ -1241,11 +1322,11 @@ def merge_annotations_cmd(input_dirs, output_dir):
         annotations = path.join(annotation_dir, 'annotations.tsv')
         trnas = path.join(annotation_dir, 'trnas.tsv')
         if not path.isfile(trnas):
-            warnings.warn("No trnas.tsv file found in directory %s" % annotation_dir)
+            warnings.warn(f"No trnas.tsv file found in directory {annotation_dir}")
             trnas = None
         rrnas = path.join(annotation_dir, 'rrnas.tsv')
         if not path.isfile(rrnas):
-            warnings.warn("No rrnas.tsv file found in directory %s" % annotation_dir)
+            warnings.warn(f"No rrnas.tsv file found in directory {annotation_dir}")
             rrnas = None
         annotations_list.append(Annotation(name=name, scaffolds=scaffolds, genes_faa=genes_faa, genes_fna=genes_fna,
                                            gff=gff, gbk=gbk, annotations=annotations, trnas=trnas, rrnas=rrnas))

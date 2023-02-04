@@ -28,22 +28,25 @@ TAXONOMY_LEVELS = ['d', 'p', 'c', 'o', 'f', 'g', 's']
 
 
 def fill_genome_summary_frame(annotations, genome_summary_frame, groupby_column):
-    genome_summary_id_sets = [set([k.strip() for k in j.split(',')]) for j in genome_summary_frame['gene_id']]
+    genome_summary_id_sets = [
+        {k.strip() for k in j.split(',')}
+        for j in genome_summary_frame['gene_id']
+    ]
     for genome, frame in annotations.groupby(groupby_column, sort=False):
         id_dict = get_ids_from_annotation(frame)
-        counts = list()
-        for i in genome_summary_id_sets:
-            identifier_count = 0
-            for j in i:
-                if j in id_dict:
-                    identifier_count += id_dict[j]
-            counts.append(identifier_count)
+        counts = [
+            sum(id_dict[j] for j in i if j in id_dict)
+            for i in genome_summary_id_sets
+        ]
         genome_summary_frame[genome] = counts
     return genome_summary_frame
 
 
 def fill_genome_summary_frame_gene_names(annotations, genome_summary_frame, groupby_column):
-    genome_summary_id_sets = [set([k.strip() for k in j.split(',')]) for j in genome_summary_frame['gene_id']]
+    genome_summary_id_sets = [
+        {k.strip() for k in j.split(',')}
+        for j in genome_summary_frame['gene_id']
+    ]
     for genome, frame in annotations.groupby(groupby_column, sort=False):
         # make dict of identifiers to gene names
         id_gene_dict = defaultdict(list)
@@ -52,9 +55,9 @@ def fill_genome_summary_frame_gene_names(annotations, genome_summary_frame, grou
             for id_ in ids:
                 id_gene_dict[id_].append(gene)
         # fill in genome summary_frame
-        values = list()
+        values = []
         for id_set in genome_summary_id_sets:
-            this_value = list()
+            this_value = []
             for id_ in id_set:
                 this_value += id_gene_dict[id_]
             values.append(','.join(this_value))
@@ -63,23 +66,31 @@ def fill_genome_summary_frame_gene_names(annotations, genome_summary_frame, grou
 
 
 def summarize_rrnas(rrnas_df, groupby_column='fasta'):
-    genome_rrna_dict = dict()
-    for genome, frame in rrnas_df.groupby(groupby_column):
-        genome_rrna_dict[genome] = Counter(frame['type'])
-    row_list = list()
+    genome_rrna_dict = {
+        genome: Counter(frame['type'])
+        for genome, frame in rrnas_df.groupby(groupby_column)
+    }
+    row_list = []
     for rna_type in RRNA_TYPES:
-        row = [rna_type, '%s ribosomal RNA gene' % rna_type.split()[0], 'rRNA', 'rRNA', '', '']
-        for genome, rrna_dict in genome_rrna_dict.items():
-            row.append(genome_rrna_dict[genome].get(rna_type, 0))
+        row = [
+            rna_type,
+            f'{rna_type.split()[0]} ribosomal RNA gene',
+            'rRNA',
+            'rRNA',
+            '',
+            '',
+        ]
+        row.extend(value.get(rna_type, 0) for value in genome_rrna_dict.values())
         row_list.append(row)
-    rrna_frame = pd.DataFrame(row_list, columns=FRAME_COLUMNS + list(genome_rrna_dict.keys()))
-    return rrna_frame
+    return pd.DataFrame(
+        row_list, columns=FRAME_COLUMNS + list(genome_rrna_dict.keys())
+    )
 
 
 def summarize_trnas(trnas_df, groupby_column='fasta'):
     # first build the frame
     combos = {(line.Type, line.Codon, line.Note) for _, line in trnas_df.iterrows()}
-    frame_rows = list()
+    frame_rows = []
     for combo in combos:
         if combo[2] == 'pseudo':
             gene_id = '%s, pseudo (%s)'
@@ -87,21 +98,18 @@ def summarize_trnas(trnas_df, groupby_column='fasta'):
         else:
             gene_id = '%s (%s)'
             gene_description = '%s tRNA with %s Codon'
-        gene_id = gene_id % (combo[0], combo[1])
-        gene_description = gene_description % (combo[0], combo[1])
-        module_description = '%s tRNA' % combo[0]
+        gene_id %= (combo[0], combo[1])
+        gene_description %= (combo[0], combo[1])
+        module_description = f'{combo[0]} tRNA'
         frame_rows.append([gene_id, gene_description, module_description, 'tRNA', 'tRNA', ''])
     trna_frame = pd.DataFrame(frame_rows, columns=FRAME_COLUMNS)
     trna_frame = trna_frame.sort_values('gene_id')
     # then fill it in
     trna_frame = trna_frame.set_index('gene_id')
     for group, frame in trnas_df.groupby(groupby_column):
-        gene_ids = list()
+        gene_ids = []
         for index, line in frame.iterrows():
-            if line.Note == 'pseudo':
-                gene_id = '%s, pseudo (%s)'
-            else:
-                gene_id = '%s (%s)'
+            gene_id = '%s, pseudo (%s)' if line.Note == 'pseudo' else '%s (%s)'
             gene_ids.append(gene_id % (line.Type, line.Codon))
         trna_frame[group] = pd.Series(Counter(gene_ids))
     trna_frame = trna_frame.reset_index()
@@ -110,10 +118,11 @@ def summarize_trnas(trnas_df, groupby_column='fasta'):
 
 
 def make_genome_summary(annotations, genome_summary_frame, trna_frame=None, rrna_frame=None, groupby_column='fasta'):
-    summary_frames = list()
-    # get ko summaries
-    summary_frames.append(fill_genome_summary_frame(annotations, genome_summary_frame.copy(), groupby_column))
-
+    summary_frames = [
+        fill_genome_summary_frame(
+            annotations, genome_summary_frame.copy(), groupby_column
+        )
+    ]
     # add rRNAs
     if rrna_frame is not None:
         summary_frames.append(summarize_rrnas(rrna_frame, groupby_column))
@@ -122,9 +131,7 @@ def make_genome_summary(annotations, genome_summary_frame, trna_frame=None, rrna
     if trna_frame is not None:
         summary_frames.append(summarize_trnas(trna_frame, groupby_column))
 
-    # merge summary frames
-    summarized_genomes = pd.concat(summary_frames, sort=False)
-    return summarized_genomes
+    return pd.concat(summary_frames, sort=False)
 
 
 def write_summarized_genomes_to_xlsx(summarized_genomes, output_file):
@@ -138,7 +145,7 @@ def write_summarized_genomes_to_xlsx(summarized_genomes, output_file):
 
 # TODO: add assembly stats like N50, longest contig, total assembled length etc
 def make_genome_stats(annotations, rrna_frame=None, trna_frame=None, groupby_column='fasta'):
-    rows = list()
+    rows = []
     columns = ['genome']
     if 'scaffold' in annotations.columns:
         columns.append('number of scaffolds')
@@ -165,7 +172,7 @@ def make_genome_stats(annotations, rrna_frame=None, trna_frame=None, groupby_col
             row.append(frame['bin_completeness'][0])
         if 'bin_contamination' in frame.columns:
             row.append(frame['bin_contamination'][0])
-        has_rrna = list()
+        has_rrna = []
         if rrna_frame is not None:
             genome_rrnas = rrna_frame.loc[rrna_frame.fasta == genome]
             for rrna in RRNA_TYPES:
@@ -174,11 +181,12 @@ def make_genome_stats(annotations, rrna_frame=None, trna_frame=None, groupby_col
                     row.append('')
                     has_rrna.append(False)
                 elif sixteens.shape[0] == 1:
-                    row.append('%s (%s, %s)' % (sixteens['scaffold'].iloc[0], sixteens.begin.iloc[0],
-                                                sixteens.end.iloc[0]))
+                    row.append(
+                        f"{sixteens['scaffold'].iloc[0]} ({sixteens.begin.iloc[0]}, {sixteens.end.iloc[0]})"
+                    )
                     has_rrna.append(True)
                 else:
-                    row.append('%s present' % sixteens.shape[0])
+                    row.append(f'{sixteens.shape[0]} present')
                     has_rrna.append(False)
         if trna_frame is not None:
             row.append(trna_frame.loc[trna_frame[groupby_column] == genome].shape[0])  # TODO: remove psuedo from count?
@@ -191,14 +199,13 @@ def make_genome_stats(annotations, rrna_frame=None, trna_frame=None, groupby_col
             else:
                 row.append('low')
         rows.append(row)
-    genome_stats = pd.DataFrame(rows, columns=columns)
-    return genome_stats
+    return pd.DataFrame(rows, columns=columns)
 
 
 def build_module_net(module_df):
     """Starts with a data from including a single module"""
     # build net from a set of module paths
-    num_steps = max([int(i.split(',')[0]) for i in set(module_df['path'])])
+    num_steps = max(int(i.split(',')[0]) for i in set(module_df['path']))
     module_net = nx.DiGraph(num_steps=num_steps, module_id=list(module_df['module'])[0],
                             module_name=list(module_df['module_name'])[0])
     # go through all path/step combinations
@@ -208,9 +215,9 @@ def build_module_net(module_df):
         module_net.add_node(module_path, kos=set(frame['ko']))
         # add incoming edge
         if step != 0:
-            module_net.add_edge('end_step_%s' % (step - 1), module_path)
+            module_net.add_edge(f'end_step_{step - 1}', module_path)
         # add outgoing edge
-        module_net.add_edge(module_path, 'end_step_%s' % step)
+        module_net.add_edge(module_path, f'end_step_{step}')
     return module_net
 
 
@@ -225,11 +232,10 @@ def get_module_step_coverage(kos, module_net):
                 pruned_module_net.remove_node(node)
             else:
                 module_kos_present = module_kos_present | ko_overlap
-    # count number of missing steps
-    missing_steps = 0
-    for node, data in pruned_module_net.nodes.items():
-        if ('end_step' in node) and (pruned_module_net.in_degree(node) == 0):
-            missing_steps += 1
+    missing_steps = sum(
+        'end_step' in node and pruned_module_net.in_degree(node) == 0
+        for node, data in pruned_module_net.nodes.items()
+    )
     # get statistics
     num_steps = pruned_module_net.graph['num_steps'] + 1
     num_steps_present = num_steps - missing_steps
@@ -244,23 +250,32 @@ def make_module_coverage_df(annotation_df, module_nets):
             for ko in ko_list.split(','):
                 kos_to_genes[ko].append(gene_id)
     coverage_dict = {}
-    for i, (module, net) in enumerate(module_nets.items()):
+    for module, net in module_nets.items():
         module_steps, module_steps_present, module_coverage, module_kos = \
             get_module_step_coverage(set(kos_to_genes.keys()), net)
         module_genes = sorted([gene for ko in module_kos for gene in kos_to_genes[ko]])
         coverage_dict[module] = [net.graph['module_name'], module_steps, module_steps_present, module_coverage,
                                  len(module_kos), ','.join(module_kos), ','.join(module_genes)]
-    coverage_df = pd.DataFrame.from_dict(coverage_dict, orient='index',
-                                         columns=['module_name', 'steps', 'steps_present', 'step_coverage', 'ko_count',
-                                                  'kos_present', 'genes_present'])
-    return coverage_df
+    return pd.DataFrame.from_dict(
+        coverage_dict,
+        orient='index',
+        columns=[
+            'module_name',
+            'steps',
+            'steps_present',
+            'step_coverage',
+            'ko_count',
+            'kos_present',
+            'genes_present',
+        ],
+    )
 
 
 def make_module_coverage_frame(annotations, module_nets, groupby_column='fasta'):
-    # go through each scaffold to check for modules
-    module_coverage_dict = dict()
-    for group, frame in annotations.groupby(groupby_column, sort=False):
-        module_coverage_dict[group] = make_module_coverage_df(frame, module_nets)
+    module_coverage_dict = {
+        group: make_module_coverage_df(frame, module_nets)
+        for group, frame in annotations.groupby(groupby_column, sort=False)
+    }
     module_coverage = pd.concat(module_coverage_dict)
     module_coverage.index = module_coverage.index.set_names(['genome', 'module'])
     return module_coverage.reset_index()
@@ -268,19 +283,41 @@ def make_module_coverage_frame(annotations, module_nets, groupby_column='fasta')
 
 def make_module_coverage_heatmap(module_coverage, mag_order=None):
     num_mags_in_frame = len(set(module_coverage['genome']))
-    c = alt.Chart(module_coverage, title='Module').encode(
-        x=alt.X('module_name', title=None, sort=None, axis=alt.Axis(labelLimit=0, labelAngle=90)),
-        y=alt.Y('genome', title=None, sort=mag_order, axis=alt.Axis(labelLimit=0)),
-        tooltip=[alt.Tooltip('genome', title='Genome'),
-                 alt.Tooltip('module_name', title='Module Name'),
-                 alt.Tooltip('steps', title='Module steps'),
-                 alt.Tooltip('steps_present', title='Steps present')
-                 ]
-    ).mark_rect().encode(color=alt.Color('step_coverage', legend=alt.Legend(title='% Complete'),
-                                         scale=alt.Scale(domain=(0, 1)))).properties(
-        width=HEATMAP_CELL_WIDTH * len(HEATMAP_MODULES),
-        height=HEATMAP_CELL_HEIGHT * num_mags_in_frame)
-    return c
+    return (
+        alt.Chart(module_coverage, title='Module')
+        .encode(
+            x=alt.X(
+                'module_name',
+                title=None,
+                sort=None,
+                axis=alt.Axis(labelLimit=0, labelAngle=90),
+            ),
+            y=alt.Y(
+                'genome',
+                title=None,
+                sort=mag_order,
+                axis=alt.Axis(labelLimit=0),
+            ),
+            tooltip=[
+                alt.Tooltip('genome', title='Genome'),
+                alt.Tooltip('module_name', title='Module Name'),
+                alt.Tooltip('steps', title='Module steps'),
+                alt.Tooltip('steps_present', title='Steps present'),
+            ],
+        )
+        .mark_rect()
+        .encode(
+            color=alt.Color(
+                'step_coverage',
+                legend=alt.Legend(title='% Complete'),
+                scale=alt.Scale(domain=(0, 1)),
+            )
+        )
+        .properties(
+            width=HEATMAP_CELL_WIDTH * len(HEATMAP_MODULES),
+            height=HEATMAP_CELL_HEIGHT * num_mags_in_frame,
+        )
+    )
 
 
 def pairwise(iterable):
@@ -315,12 +352,15 @@ def split_into_steps(definition, split_char=' '):
         if (curr_level == 0) and (char in split_char):
             step_starts.append(i)
     step_starts.append(len(definition))
-    steps = list()
+    steps = []
     for a, b in pairwise(step_starts):
         step = definition[a+1:b]
-        if step.startswith('(') and step.endswith(')'):
-            if first_open_paren_is_all(step):
-                step = step[1:-1]
+        if (
+            step.startswith('(')
+            and step.endswith(')')
+            and first_open_paren_is_all(step)
+        ):
+            step = step[1:-1]
         steps.append(step)
     return steps
 
@@ -349,8 +389,8 @@ def make_module_network(definition, network: nx.DiGraph = None, parent_nodes=('s
 
 def get_module_coverage(module_net: nx.DiGraph, genes_present: set):
     max_coverage = -1
-    max_coverage_genes = list()
-    max_coverage_missing_genes = list()
+    max_coverage_genes = []
+    max_coverage_missing_genes = []
     max_path_len = 0
     for net_path in nx.all_simple_paths(module_net, source='start', target='end'):
         net_path = set(net_path[1:-1])
@@ -365,7 +405,7 @@ def get_module_coverage(module_net: nx.DiGraph, genes_present: set):
 
 
 def make_etc_coverage_df(etc_module_df, annotations, groupby_column='fasta'):
-    etc_coverage_df_rows = list()
+    etc_coverage_df_rows = []
     for _, module_row in etc_module_df.iterrows():
         definition = module_row['definition']
         # remove optional subunits
@@ -381,8 +421,7 @@ def make_etc_coverage_df(etc_module_df, annotations, groupby_column='fasta'):
             grouped_ids = set(get_ids_from_annotation(frame).keys())
             path_len, path_coverage_count, path_coverage_percent, genes, missing_genes = \
                 get_module_coverage(module_net, grouped_ids)
-            complex_module_name = 'Complex %s: %s' % (module_row['complex'].replace('Complex ', ''),
-                                                      module_row['module_name'])
+            complex_module_name = f"Complex {module_row['complex'].replace('Complex ', '')}: {module_row['module_name']}"
             etc_coverage_df_rows.append([module_row['module_id'], module_row['module_name'],
                                          module_row['complex'].replace('Complex ', ''), group, path_len,
                                          path_coverage_count, path_coverage_percent, ','.join(sorted(genes)),
@@ -392,8 +431,8 @@ def make_etc_coverage_df(etc_module_df, annotations, groupby_column='fasta'):
 
 def make_etc_coverage_heatmap(etc_coverage, mag_order=None, module_order=None):
     num_mags_in_frame = len(set(etc_coverage['genome']))
-    charts = list()
-    for i, (etc_complex, frame) in enumerate(etc_coverage.groupby('complex')):
+    charts = []
+    for etc_complex, frame in etc_coverage.groupby('complex'):
         # if this is the first chart then make y-ticks otherwise none
         c = alt.Chart(frame, title=etc_complex).encode(
             x=alt.X('module_name', title=None, axis=alt.Axis(labelLimit=0, labelAngle=90),
@@ -420,34 +459,43 @@ def make_functional_df(annotations, function_heatmap_form, groupby_column='fasta
     function_heatmap_form = function_heatmap_form.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     function_heatmap_form = function_heatmap_form.fillna('')
     # build dict of ids per genome
-    genome_to_id_dict = dict()
+    genome_to_id_dict = {}
     for genome, frame in annotations.groupby(groupby_column, sort=False):
         id_list = get_ids_from_annotation(frame).keys()
         genome_to_id_dict[genome] = set(id_list)
     # build long from data frame
-    rows = list()
+    rows = []
     for function, frame in function_heatmap_form.groupby('function_name', sort=False):
         for bin_name, id_set in genome_to_id_dict.items():
-            presents_in_bin = list()
+            presents_in_bin = []
             functions_present = set()
             for _, row in frame.iterrows():
-                function_id_set = set([i.strip() for i in row.function_ids.strip().split(',')])
+                function_id_set = {i.strip() for i in row.function_ids.strip().split(',')}
                 present_in_bin = id_set & function_id_set
                 functions_present = functions_present | present_in_bin
                 presents_in_bin.append(len(present_in_bin) > 0)
             function_in_bin = np.all(presents_in_bin)
             row = frame.iloc[0]
-            rows.append([row.category, row.subcategory, row.function_name, ', '.join(functions_present),
-                         '; '.join(get_ordered_uniques(frame.long_function_name)),
-                         '; '.join(get_ordered_uniques(frame.gene_symbol)), bin_name, function_in_bin,
-                         '%s: %s' % (row.category, row.function_name)])
+            rows.append(
+                [
+                    row.category,
+                    row.subcategory,
+                    row.function_name,
+                    ', '.join(functions_present),
+                    '; '.join(get_ordered_uniques(frame.long_function_name)),
+                    '; '.join(get_ordered_uniques(frame.gene_symbol)),
+                    bin_name,
+                    function_in_bin,
+                    f'{row.category}: {row.function_name}',
+                ]
+            )
     return pd.DataFrame(rows, columns=list(function_heatmap_form.columns) + ['genome', 'present',
                                                                              'category_function_name'])
 
 
 def make_functional_heatmap(functional_df, mag_order=None):
     # build heatmaps
-    charts = list()
+    charts = []
     for i, (group, frame) in enumerate(functional_df.groupby('category', sort=False)):
         # set variables for chart
         function_order = get_ordered_uniques(list(frame.function_name))
@@ -481,9 +529,7 @@ def make_functional_heatmap(functional_df, mag_order=None):
             width=chart_width,
             height=chart_height)
         charts.append(c)
-    # merge and return
-    function_heatmap = alt.hconcat(*charts, spacing=5)
-    return function_heatmap
+    return alt.hconcat(*charts, spacing=5)
 
 
 # TODO: refactor this to handle splitting large numbers of genomes into multiple heatmaps here
@@ -514,37 +560,52 @@ def make_liquor_heatmap(module_coverage_frame, etc_coverage_df, function_df, mag
         function_df, mag_order = rename_genomes_to_taxa(function_df, labels, mag_order)
     function_heatmap = make_functional_heatmap(function_df, mag_order)
 
-    liquor = alt.hconcat(alt.hconcat(module_coverage_heatmap, etc_heatmap), function_heatmap)
-    return liquor
+    return alt.hconcat(
+        alt.hconcat(module_coverage_heatmap, etc_heatmap), function_heatmap
+    )
 
 
 def make_liquor_df(module_coverage_frame, etc_coverage_df, function_df):
-    liquor_df = pd.concat([module_coverage_frame.pivot(index='genome', columns='module_name', values='step_coverage'),
-                           etc_coverage_df.pivot(index='genome', columns='complex_module_name',
-                                                 values='percent_coverage'),
-                           function_df.pivot(index='genome', columns='category_function_name', values='present')],
-                          axis=1, sort=False)
-    return liquor_df
+    return pd.concat(
+        [
+            module_coverage_frame.pivot(
+                index='genome', columns='module_name', values='step_coverage'
+            ),
+            etc_coverage_df.pivot(
+                index='genome',
+                columns='complex_module_name',
+                values='percent_coverage',
+            ),
+            function_df.pivot(
+                index='genome',
+                columns='category_function_name',
+                values='present',
+            ),
+        ],
+        axis=1,
+        sort=False,
+    )
 
 
 def get_phylum_and_most_specific(taxa_str):
     taxa_ranks = [i[3:] for i in taxa_str.split(';')]
-    phylum = taxa_ranks[1]
-    most_specific_rank = TAXONOMY_LEVELS[sum([len(i) > 0 for i in taxa_ranks])-1]
-    most_specific_taxa = taxa_ranks[sum([len(i) > 0 for i in taxa_ranks]) - 1]
+    most_specific_rank = TAXONOMY_LEVELS[sum(len(i) > 0 for i in taxa_ranks) - 1]
+    most_specific_taxa = taxa_ranks[sum(len(i) > 0 for i in taxa_ranks) - 1]
     if most_specific_rank == 'd':
-        return 'd__%s;p__' % most_specific_taxa
-    if most_specific_rank == 'p':
-        return 'p__%s;c__' % most_specific_taxa
-    else:
-        return 'p__%s;%s__%s' % (phylum, most_specific_rank, most_specific_taxa)
+        return f'd__{most_specific_taxa};p__'
+    phylum = taxa_ranks[1]
+    return (
+        f'p__{most_specific_taxa};c__'
+        if most_specific_rank == 'p'
+        else f'p__{phylum};{most_specific_rank}__{most_specific_taxa}'
+    )
 
 
 def make_strings_no_repeats(genome_taxa_dict):
-    labels = dict()
+    labels = {}
     seen = Counter()
     for genome, taxa_string in genome_taxa_dict.items():
-        final_taxa_string = '%s_%s' % (taxa_string, str(seen[taxa_string]))
+        final_taxa_string = f'{taxa_string}_{str(seen[taxa_string])}'
         seen[taxa_string] += 1
         labels[genome] = final_taxa_string
     return labels
@@ -559,15 +620,8 @@ def summarize_genomes(input_file, trna_path=None, rrna_path=None, output_dir='.'
     if 'bin_taxnomy' in annotations:
         annotations = annotations.sort_values('bin_taxonomy')
 
-    if trna_path is None:
-        trna_frame = None
-    else:
-        trna_frame = pd.read_csv(trna_path, sep='\t')
-    if rrna_path is None:
-        rrna_frame = None
-    else:
-        rrna_frame = pd.read_csv(rrna_path, sep='\t')
-
+    trna_frame = None if trna_path is None else pd.read_csv(trna_path, sep='\t')
+    rrna_frame = None if rrna_path is None else pd.read_csv(rrna_path, sep='\t')
     # get db_locs and read in dbs
     database_handler = DatabaseHandler()
     if 'genome_summary_form' not in database_handler.dram_sheet_locs:
@@ -585,7 +639,9 @@ def summarize_genomes(input_file, trna_path=None, rrna_path=None, output_dir='.'
     module_steps_form = pd.read_csv(database_handler.dram_sheet_locs['module_step_form'], sep='\t')
     function_heatmap_form = pd.read_csv(database_handler.dram_sheet_locs['function_heatmap_form'], sep='\t')
     etc_module_df = pd.read_csv(database_handler.dram_sheet_locs['etc_module_database'], sep='\t')
-    print('%s: Retrieved database locations and descriptions' % (str(datetime.now() - start_time)))
+    print(
+        f'{str(datetime.now() - start_time)}: Retrieved database locations and descriptions'
+    )
 
     # make output folder
     mkdir(output_dir)
@@ -593,7 +649,7 @@ def summarize_genomes(input_file, trna_path=None, rrna_path=None, output_dir='.'
     # make genome stats
     genome_stats = make_genome_stats(annotations, rrna_frame, trna_frame, groupby_column=groupby_column)
     genome_stats.to_csv(path.join(output_dir, 'genome_stats.tsv'), sep='\t', index=None)
-    print('%s: Calculated genome statistics' % (str(datetime.now() - start_time)))
+    print(f'{str(datetime.now() - start_time)}: Calculated genome statistics')
 
     # make genome metabolism summary
     genome_summary = path.join(output_dir, 'metabolism_summary.xlsx')
@@ -603,15 +659,19 @@ def summarize_genomes(input_file, trna_path=None, rrna_path=None, output_dir='.'
         summarized_genomes = make_genome_summary(annotations, genome_summary_form, trna_frame, rrna_frame,
                                                  groupby_column)
     write_summarized_genomes_to_xlsx(summarized_genomes, genome_summary)
-    print('%s: Generated genome metabolism summary' % (str(datetime.now() - start_time)))
+    print(
+        f'{str(datetime.now() - start_time)}: Generated genome metabolism summary'
+    )
 
     # make liquor
     if 'bin_taxonomy' in annotations:
         genome_order = get_ordered_uniques(annotations.sort_values('bin_taxonomy')[groupby_column])
         # if gtdb format then get phylum and most specific
-        if all([i[:3] == 'd__' and len(i.split(';')) == 7 for i in annotations['bin_taxonomy'].fillna('')]):
+        if all(
+            i[:3] == 'd__' and len(i.split(';')) == 7
+            for i in annotations['bin_taxonomy'].fillna('')
+        ):
             taxa_str_parser = get_phylum_and_most_specific
-        # else just throw in what is there
         else:
             taxa_str_parser = lambda x: x
         labels = make_strings_no_repeats({row[groupby_column]: taxa_str_parser(row['bin_taxonomy'])
@@ -625,9 +685,9 @@ def summarize_genomes(input_file, trna_path=None, rrna_path=None, output_dir='.'
                    for module, module_df in module_steps_form.groupby('module') if module in HEATMAP_MODULES}
 
     if len(genome_order) > genomes_per_product:
-        module_coverage_dfs = list()
-        etc_coverage_dfs = list()
-        function_dfs = list()
+        module_coverage_dfs = []
+        etc_coverage_dfs = []
+        function_dfs = []
         # generates slice start and slice end to grab from genomes and labels from 0 to end of genome order
         pairwise_iter = pairwise(list(range(0, len(genome_order), genomes_per_product)) + [len(genome_order)])
         for i, (start, end) in enumerate(pairwise_iter):
@@ -641,7 +701,7 @@ def summarize_genomes(input_file, trna_path=None, rrna_path=None, output_dir='.'
             function_dfs.append(function_df_subset)
             liquor = make_liquor_heatmap(module_coverage_df_subset, etc_coverage_df_subset, function_df_subset,
                                          genomes, labels)
-            liquor.save(path.join(output_dir, 'product_%s.html' % i))
+            liquor.save(path.join(output_dir, f'product_{i}.html'))
         liquor_df = make_liquor_df(pd.concat(module_coverage_dfs), pd.concat(etc_coverage_dfs), pd.concat(function_dfs))
         liquor_df.to_csv(path.join(output_dir, 'product.tsv'), sep='\t')
     else:
@@ -653,5 +713,7 @@ def summarize_genomes(input_file, trna_path=None, rrna_path=None, output_dir='.'
         liquor_df.to_csv(path.join(output_dir, 'product.tsv'), sep='\t')
         liquor = make_liquor_heatmap(module_coverage_df, etc_coverage_df, function_df, genome_order, labels)
         liquor.save(path.join(output_dir, 'product.html'))
-    print('%s: Generated product heatmap and table' % (str(datetime.now() - start_time)))
-    print("%s: Completed distillation" % str(datetime.now() - start_time))
+    print(
+        f'{str(datetime.now() - start_time)}: Generated product heatmap and table'
+    )
+    print(f"{str(datetime.now() - start_time)}: Completed distillation")
