@@ -16,14 +16,22 @@ setup(
     scripts=['scripts/DRAM.py', 'scripts/DRAM-v.py', 'scripts/DRAM-setup.py'],
     packages=find_packages(),
     description="Distilled and Refined Annotation of Metabolism: A tool for the annotation and curation of function for"
-                " microbial and viral genomes",
+    " microbial and viral genomes",
     long_description=long_description,
-    long_description_content_type='text/markdown',  # Optional (see note above)
+    long_description_content_type='text/markdown',
     package_data={'mag_annotator': ['CONFIG']},
     python_requires='>=3',
-    install_requires=['scikit-bio', 'pandas', 'altair', 'sqlalchemy', 'networkx', 'openpyxl', 'numpy'],
+    install_requires=[
+        'scikit-bio',
+        'pandas',
+        'altair',
+        'sqlalchemy',
+        'networkx',
+        'openpyxl',
+        'numpy',
+    ],
     author="Michael Shaffer",
     author_email='michael.t.shaffer@colostate.edu',
     url="https://github.com/shafferm/DRAM/",
-    download_url="https://github.com/shafferm/DRAM/tarball/%s" % __version__
+    download_url=f"https://github.com/shafferm/DRAM/tarball/{__version__}",
 )

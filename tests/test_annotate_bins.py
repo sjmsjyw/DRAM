@@ -68,8 +68,7 @@ def test_run_prodigal(prodigal_gff, prodigal_fna, prodigal_faa):
 
 @pytest.fixture()
 def mmseqs_db_dir(tmpdir):
-    output_loc = tmpdir.mkdir('make_mmseqs_db_test')
-    return output_loc
+    return tmpdir.mkdir('make_mmseqs_db_test')
 
 
 @pytest.fixture()
@@ -93,8 +92,9 @@ def target_mmseqs_db(mmseqs_db_dir, phix_proteins):
 
 @pytest.fixture()
 def best_hits_loc(mmseqs_db, target_mmseqs_db, mmseqs_db_dir):
-    best_hits_loc = get_best_hits(mmseqs_db, target_mmseqs_db, mmseqs_db_dir, threads=1, verbose=False)
-    return best_hits_loc
+    return get_best_hits(
+        mmseqs_db, target_mmseqs_db, mmseqs_db_dir, threads=1, verbose=False
+    )
 
 
 def test_get_best_hits(best_hits_loc):
@@ -103,9 +103,9 @@ def test_get_best_hits(best_hits_loc):
 
 @pytest.fixture()
 def reverse_best_hits_loc(best_hits_loc, mmseqs_db, target_mmseqs_db, mmseqs_db_dir):
-    reverse_best_hits_loc = get_reciprocal_best_hits(mmseqs_db, target_mmseqs_db, mmseqs_db_dir, threads=1,
-                                                     verbose=False)
-    return reverse_best_hits_loc
+    return get_reciprocal_best_hits(
+        mmseqs_db, target_mmseqs_db, mmseqs_db_dir, threads=1, verbose=False
+    )
 
 
 def test_get_reciprocal_best_hits(reverse_best_hits_loc):
@@ -116,8 +116,7 @@ def test_get_reciprocal_best_hits(reverse_best_hits_loc):
 def processed_hits():
     forward = os.path.join('tests', 'data', 'query_target_hits.b6')
     reverse = os.path.join('tests', 'data', 'target_query_hits.b6')
-    processed_hits = process_reciprocal_best_hits(forward, reverse)
-    return processed_hits
+    return process_reciprocal_best_hits(forward, reverse)
 
 
 def test_process_reciprocal_best_hits(processed_hits):

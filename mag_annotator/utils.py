@@ -9,7 +9,7 @@ import pandas as pd
 def download_file(url, output_file=None, verbose=True):
     # TODO: catching error 4 and give error message to retry or retry automatically
     if verbose:
-        print('downloading %s' % url)
+        print(f'downloading {url}')
     if output_file is None:
         return urlopen(url).read().decode('utf-8')
     else:
@@ -64,7 +64,7 @@ def merge_files(files_to_merge, outfile, has_header=False):
 
 
 def get_ids_from_annotation(frame):
-    id_list = list()
+    id_list = []
     # get kegg gene ids
     if 'kegg_genes_id' in frame:
         id_list += [j.strip() for i in frame.kegg_genes_id.dropna() for j in i.split(',')]
@@ -94,19 +94,19 @@ def get_ids_from_annotation(frame):
 
 #TODO unify this with get_ids_from_annotation
 def get_ids_from_row(row):
-    id_list = list()
+    id_list = []
     # get kegg gene ids
     if 'kegg_genes_id' in row and not pd.isna(row['kegg_genes_id']):
         id_list += row['kegg_genes_id']
     # get kegg orthology ids
     if 'ko_id' in row and not pd.isna(row['ko_id']):
-        id_list += [j for j in row['ko_id'].split(',')]
+        id_list += list(row['ko_id'].split(','))
     # get ec numbers
     if 'kegg_hit' in row and not pd.isna(row['kegg_hit']):
         id_list += [i[1:-1] for i in re.findall(r'\[EC:\d*.\d*.\d*.\d*\]', row['kegg_hit'])]
     # get merops ids
     if 'peptidase_family' in row and not pd.isna(row['peptidase_family']):
-        id_list += [j for j in row['peptidase_family'].split(';')]
+        id_list += list(row['peptidase_family'].split(';'))
     # get cazy ids
     if 'cazy_hits' in row and not pd.isna(row['cazy_hits']):
         id_list += [i[1:-1].split('_')[0] for i in re.findall(r'\[[A-Z]*\d*?\]', row['cazy_hits'])]
@@ -124,18 +124,13 @@ def divide_chunks(l, n):
 
 
 def remove_prefix(text, prefix):
-    if text.startswith(prefix):
-        return text[len(prefix):]
-    return text  # or whatever
+    return text[len(prefix):] if text.startswith(prefix) else text
 
 
 def remove_suffix(text, suffix):
-    if text.endswith(suffix):
-        return text[:-1*len(suffix)]
-    return text  # or whatever
+    return text[:-1*len(suffix)] if text.endswith(suffix) else text
 
 
 def get_ordered_uniques(seq):
     seen = set()
-    seen_add = seen.add
-    return [x for x in seq if not (x in seen or seen_add(x))]
+    return [x for x in seq if x not in seen and not seen.add(x)]

@@ -17,7 +17,7 @@ from mag_annotator.utils import run_process, make_mmseqs_db, download_file, merg
 
 
 def get_iso_date():
-    return datetime.today().strftime('%Y%m%d')
+    return datetime.now().strftime('%Y%m%d')
 
 
 def generate_modified_kegg_fasta(kegg_fasta, gene_ko_link_loc=None):
@@ -35,7 +35,7 @@ def generate_modified_kegg_fasta(kegg_fasta, gene_ko_link_loc=None):
         new_description = seq.metadata['description']
         for ko in genes_ko_dict[seq.metadata['id']]:
             if ko not in new_description:
-                new_description += '; %s' % ko
+                new_description += f'; {ko}'
         seq.metadata['description'] = new_description
         yield seq
 
@@ -51,7 +51,7 @@ def process_kegg_db(output_dir, kegg_loc, gene_ko_link_loc=None, download_date=N
     else:
         kegg_mod_loc = kegg_loc
     # make mmseqsdb from modified kegg fasta
-    kegg_mmseqs_db = path.join(output_dir, 'kegg.%s.mmsdb' % download_date)
+    kegg_mmseqs_db = path.join(output_dir, f'kegg.{download_date}.mmsdb')
     make_mmseqs_db(kegg_mod_loc, kegg_mmseqs_db, create_index=True, threads=threads, verbose=verbose)
     return kegg_mmseqs_db
 
@@ -83,19 +83,20 @@ def download_and_process_uniref(uniref_fasta_zipped=None, output_dir='.', uniref
                                 verbose=True):
     """"""
     if uniref_fasta_zipped is None:  # download database if not provided
-        uniref_fasta_zipped = path.join(output_dir, 'uniref%s.fasta.gz' % uniref_version)
-        uniref_url = 'https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref%s/uniref%s.fasta.gz' % \
-                     (uniref_version, uniref_version)
+        uniref_fasta_zipped = path.join(output_dir, f'uniref{uniref_version}.fasta.gz')
+        uniref_url = f'https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref{uniref_version}/uniref{uniref_version}.fasta.gz'
         download_file(uniref_url, uniref_fasta_zipped, verbose=verbose)
-    uniref_mmseqs_db = path.join(output_dir, 'uniref%s.%s.mmsdb' % (uniref_version, get_iso_date()))
+    uniref_mmseqs_db = path.join(
+        output_dir, f'uniref{uniref_version}.{get_iso_date()}.mmsdb'
+    )
     make_mmseqs_db(uniref_fasta_zipped, uniref_mmseqs_db, create_index=True, threads=threads, verbose=verbose)
     return uniref_mmseqs_db
 
 
 def process_mmspro(full_alignment, output_dir, db_name='db', threads=10, verbose=True):
-    mmseqs_msa = path.join(output_dir, '%s.mmsmsa' % db_name)
+    mmseqs_msa = path.join(output_dir, f'{db_name}.mmsmsa')
     run_process(['mmseqs', 'convertmsa', full_alignment, mmseqs_msa], verbose=verbose)
-    mmseqs_profile = path.join(output_dir, '%s.mmspro' % db_name)
+    mmseqs_profile = path.join(output_dir, f'{db_name}.mmspro')
     run_process(['mmseqs', 'msa2profile', mmseqs_msa, mmseqs_profile, '--match-mode', '1', '--threads', str(threads)],
                 verbose=verbose)
     tmp_dir = path.join(output_dir, 'tmp')
@@ -109,8 +110,7 @@ def download_and_process_pfam(pfam_full_zipped=None, output_dir='.', threads=10,
         pfam_full_zipped = path.join(output_dir, 'Pfam-A.full.gz')
         download_file('ftp://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.full.gz', pfam_full_zipped,
                       verbose=verbose)
-    pfam_profile = process_mmspro(pfam_full_zipped, output_dir, 'pfam', threads, verbose)
-    return pfam_profile
+    return process_mmspro(pfam_full_zipped, output_dir, 'pfam', threads, verbose)
 
 
 def download_pfam_descriptions(output_dir='.', verbose=True):
@@ -122,21 +122,32 @@ def download_pfam_descriptions(output_dir='.', verbose=True):
 
 def download_and_process_dbcan(dbcan_hmm=None, output_dir='.', dbcan_release='9', verbose=True):
     if dbcan_hmm is None:  # download database if not provided
-        dbcan_hmm = path.join(output_dir, 'dbCAN-HMMdb-V%s.txt' % dbcan_release)
+        dbcan_hmm = path.join(output_dir, f'dbCAN-HMMdb-V{dbcan_release}.txt')
         if int(dbcan_release) < 9:
-            download_file('http://bcb.unl.edu/dbCAN2/download/Databases/dbCAN-HMMdb-V%s.txt' % dbcan_release, dbcan_hmm,
-                          verbose=verbose)
+            download_file(
+                f'http://bcb.unl.edu/dbCAN2/download/Databases/dbCAN-HMMdb-V{dbcan_release}.txt',
+                dbcan_hmm,
+                verbose=verbose,
+            )
         else:
-            download_file('http://bcb.unl.edu/dbCAN2/download/dbCAN-HMMdb-V%s.txt' % dbcan_release, dbcan_hmm,
-                          verbose=verbose)
+            download_file(
+                f'http://bcb.unl.edu/dbCAN2/download/dbCAN-HMMdb-V{dbcan_release}.txt',
+                dbcan_hmm,
+                verbose=verbose,
+            )
     run_process(['hmmpress', '-f', dbcan_hmm], verbose=verbose)
     return dbcan_hmm
 
 
 def download_dbcan_descriptions(output_dir='.', upload_date='07302020', verbose=True):
-    dbcan_fam_activities = path.join(output_dir, 'CAZyDB.%s.fam-activities.txt' % upload_date)
-    download_file('http://bcb.unl.edu/dbCAN2/download/Databases/CAZyDB.%s.fam-activities.txt' % upload_date,
-                  dbcan_fam_activities, verbose=verbose)
+    dbcan_fam_activities = path.join(
+        output_dir, f'CAZyDB.{upload_date}.fam-activities.txt'
+    )
+    download_file(
+        f'http://bcb.unl.edu/dbCAN2/download/Databases/CAZyDB.{upload_date}.fam-activities.txt',
+        dbcan_fam_activities,
+        verbose=verbose,
+    )
     return dbcan_fam_activities
 
 
@@ -150,16 +161,21 @@ def download_and_process_viral_refseq(merged_viral_faas=None, output_dir='.', vi
         viral_faa_glob = path.join(output_dir, faa_base_name % '*')
         for number in range(viral_files):
             number += 1
-            refseq_url = 'ftp://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.%s.protein.faa.gz' % number
+            refseq_url = f'ftp://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.{number}.protein.faa.gz'
             refseq_faa = path.join(output_dir, faa_base_name % number)
             download_file(refseq_url, refseq_faa, verbose=verbose)
 
         # then merge files from above
         merged_viral_faas = path.join(output_dir, 'viral.merged.protein.faa.gz')
-        run_process(['cat %s > %s' % (' '.join(glob(viral_faa_glob)), merged_viral_faas)], shell=True)
+        run_process(
+            [f"cat {' '.join(glob(viral_faa_glob))} > {merged_viral_faas}"],
+            shell=True,
+        )
 
     # make mmseqs database
-    refseq_viral_mmseqs_db = path.join(output_dir, 'refseq_viral.%s.mmsdb' % get_iso_date())
+    refseq_viral_mmseqs_db = path.join(
+        output_dir, f'refseq_viral.{get_iso_date()}.mmsdb'
+    )
     make_mmseqs_db(merged_viral_faas, refseq_viral_mmseqs_db, create_index=True, threads=threads, verbose=verbose)
     return refseq_viral_mmseqs_db
 
@@ -169,7 +185,9 @@ def download_and_process_merops_peptidases(peptidase_faa=None, output_dir='.', t
         peptidase_faa = path.join(output_dir, 'merops_peptidases_nr.faa')
         merops_url = 'ftp://ftp.ebi.ac.uk/pub/databases/merops/current_release/pepunit.lib'
         download_file(merops_url, peptidase_faa, verbose=verbose)
-    peptidase_mmseqs_db = path.join(output_dir, 'peptidases.%s.mmsdb' % get_iso_date())
+    peptidase_mmseqs_db = path.join(
+        output_dir, f'peptidases.{get_iso_date()}.mmsdb'
+    )
     make_mmseqs_db(peptidase_faa, peptidase_mmseqs_db, create_index=True, threads=threads, verbose=verbose)
     return peptidase_mmseqs_db
 
@@ -177,57 +195,85 @@ def download_and_process_merops_peptidases(peptidase_faa=None, output_dir='.', t
 def download_and_process_vogdb(vog_hmm_targz=None, output_dir='.', vogdb_release='latest', verbose=True):
     if vog_hmm_targz is None:
         vog_hmm_targz = path.join(output_dir, 'vog.hmm.tar.gz')
-        vogdb_url = 'http://fileshare.csb.univie.ac.at/vog/%s/vog.hmm.tar.gz' % vogdb_release
+        vogdb_url = f'http://fileshare.csb.univie.ac.at/vog/{vogdb_release}/vog.hmm.tar.gz'
         download_file(vogdb_url, vog_hmm_targz, verbose=verbose)
     hmm_dir = path.join(output_dir, 'vogdb_hmms')
     mkdir(hmm_dir)
     vogdb_targz = tarfile.open(vog_hmm_targz)
     vogdb_targz.extractall(hmm_dir)
-    vog_hmms = path.join(output_dir, 'vog_%s_hmms.txt' % vogdb_release)
+    vog_hmms = path.join(output_dir, f'vog_{vogdb_release}_hmms.txt')
     merge_files(glob(path.join(hmm_dir, 'VOG*.hmm')), vog_hmms)
     run_process(['hmmpress', '-f', vog_hmms], verbose=verbose)
     return vog_hmms
 
 
 def download_vog_annotations(output_dir, vogdb_version='latest', verbose=True):
-    vog_annotations = path.join(output_dir, 'vog_annotations_%s.tsv.gz' % vogdb_version)
-    download_file('http://fileshare.csb.univie.ac.at/vog/%s/vog.annotations.tsv.gz' % vogdb_version,
-                  vog_annotations, verbose=verbose)
+    vog_annotations = path.join(
+        output_dir, f'vog_annotations_{vogdb_version}.tsv.gz'
+    )
+    download_file(
+        f'http://fileshare.csb.univie.ac.at/vog/{vogdb_version}/vog.annotations.tsv.gz',
+        vog_annotations,
+        verbose=verbose,
+    )
     return vog_annotations
 
 
 def download_and_process_genome_summary_form(output_dir, branch='master', verbose=True):
-    genome_summary_form = path.join(output_dir, 'genome_summary_form.%s.tsv' % get_iso_date())
-    download_file('https://raw.githubusercontent.com/shafferm/DRAM/%s/data/genome_summary_form.tsv' % branch,
-                  genome_summary_form, verbose=verbose)
+    genome_summary_form = path.join(
+        output_dir, f'genome_summary_form.{get_iso_date()}.tsv'
+    )
+    download_file(
+        f'https://raw.githubusercontent.com/shafferm/DRAM/{branch}/data/genome_summary_form.tsv',
+        genome_summary_form,
+        verbose=verbose,
+    )
     return genome_summary_form
 
 
 def download_and_process_module_step_form(output_dir, branch='master', verbose=True):
-    function_heatmap_form = path.join(output_dir, 'module_step_form.%s.tsv' % get_iso_date())
-    download_file('https://raw.githubusercontent.com/shafferm/DRAM/%s/data/module_step_form.tsv' % branch,
-                  function_heatmap_form, verbose=verbose)
+    function_heatmap_form = path.join(
+        output_dir, f'module_step_form.{get_iso_date()}.tsv'
+    )
+    download_file(
+        f'https://raw.githubusercontent.com/shafferm/DRAM/{branch}/data/module_step_form.tsv',
+        function_heatmap_form,
+        verbose=verbose,
+    )
     return function_heatmap_form
 
 
 def download_and_process_etc_module_database(output_dir, branch='master', verbose=True):
-    etc_module_database = path.join(output_dir, 'etc_mdoule_database.%s.tsv' % get_iso_date())
-    download_file('https://raw.githubusercontent.com/shafferm/DRAM/%s/data/etc_module_database.tsv' % branch,
-                  etc_module_database, verbose=verbose)
+    etc_module_database = path.join(
+        output_dir, f'etc_mdoule_database.{get_iso_date()}.tsv'
+    )
+    download_file(
+        f'https://raw.githubusercontent.com/shafferm/DRAM/{branch}/data/etc_module_database.tsv',
+        etc_module_database,
+        verbose=verbose,
+    )
     return etc_module_database
 
 
 def download_and_process_function_heatmap_form(output_dir, branch='master', verbose=True):
-    function_heatmap_form = path.join(output_dir, 'function_heatmap_form.%s.tsv' % get_iso_date())
-    download_file('https://raw.githubusercontent.com/shafferm/DRAM/%s/data/function_heatmap_form.tsv' % branch,
-                  function_heatmap_form, verbose=verbose)
+    function_heatmap_form = path.join(
+        output_dir, f'function_heatmap_form.{get_iso_date()}.tsv'
+    )
+    download_file(
+        f'https://raw.githubusercontent.com/shafferm/DRAM/{branch}/data/function_heatmap_form.tsv',
+        function_heatmap_form,
+        verbose=verbose,
+    )
     return function_heatmap_form
 
 
 def download_and_process_amg_database(output_dir, branch='master', verbose=True):
-    amg_database = path.join(output_dir, 'amg_database.%s.tsv' % get_iso_date())
-    download_file('https://raw.githubusercontent.com/shafferm/DRAM/%s/data/amg_database.tsv' % branch,
-                  amg_database, verbose=verbose)
+    amg_database = path.join(output_dir, f'amg_database.{get_iso_date()}.tsv')
+    download_file(
+        f'https://raw.githubusercontent.com/shafferm/DRAM/{branch}/data/amg_database.tsv',
+        amg_database,
+        verbose=verbose,
+    )
     return amg_database
 
 
@@ -237,7 +283,7 @@ def check_file_exists(db_loc):
     elif path.isfile(db_loc):
         return True
     else:
-        raise ValueError("Database location does not exist: %s" % db_loc)
+        raise ValueError(f"Database location does not exist: {db_loc}")
 
 
 def prepare_databases(output_dir, kegg_loc=None, gene_ko_link_loc=None, kofam_hmm_loc=None, kofam_ko_list_loc=None,

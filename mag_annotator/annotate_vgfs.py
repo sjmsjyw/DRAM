@@ -54,9 +54,7 @@ def is_affi_tab_not_fasta(input_file: str) -> bool:
     """
     with open(input_file) as input_io:
         num_delimiter = input_io.readlines()[1].count('|')
-    if num_delimiter == 11:
-        return True
-    return False
+    return num_delimiter == 11
 
 
 def remove_bad_chars_fasta(fasta):
@@ -64,8 +62,8 @@ def remove_bad_chars_fasta(fasta):
         raise ValueError("The input file format matches virsorter affi contigs not fasta, please check "
                          "that the flags match the file type: '-v' for virsorter, and '-i' for fasta.")
 
-    new_headers = list()
-    new_seqs = list()
+    new_headers = []
+    new_seqs = []
     for seq in read_sequence(fasta, format='fasta'):
         new_header = seq.metadata['id']
         new_header = new_header.replace(';', '_').replace('=', '_')
@@ -93,14 +91,14 @@ def remove_bad_chars_virsorter_affi_contigs(virsorter_in: str) -> str:
         raise ValueError("The input file format does not match virsorter affi contigs, please check "
                          "that the flags match the file type: '-v' for virsorter, and '-i' for "
                          "fasta.")
-    new_lines = list()
-    for line in open(virsorter_in).readlines():
+    new_lines = []
+    for line in open(virsorter_in):
         line = line.strip()
         if line.startswith('>'):
             line = line.lstrip('>')
             split_line = line.split('|')
             split_line[0] = split_line[0].replace(';', '_').replace('=', '_')
-            new_lines.append('>%s' % '|'.join(split_line))
+            new_lines.append(f">{'|'.join(split_line)}")
         else:
             split_line = line.split('|')
             split_line[0] = split_line[0].replace(';', '_').replace('=', '_')
@@ -129,7 +127,7 @@ def remove_bad_chars(input_fasta: str = None, input_virsorter_affi_contigs: str 
         if ';' in output or '=' in output:
             raise ValueError('Cannot have = or ; in output fasta to work with DRAM-v, please change output fasta name')
         new_seqs = remove_bad_chars_fasta(input_fasta)
-        write_sequence((seq for seq in new_seqs), format='fasta', into=output)
+        write_sequence(iter(new_seqs), format='fasta', into=output)
     else:
         virsorter_out = remove_bad_chars_virsorter_affi_contigs(input_virsorter_affi_contigs)
         open(output, 'w').write(virsorter_out)
@@ -138,7 +136,7 @@ def remove_bad_chars(input_fasta: str = None, input_virsorter_affi_contigs: str 
 def get_virsorter_hits(virsorter_affi_contigs):
     raw_file = open(virsorter_affi_contigs).read()
 
-    virsorter_rows = list()
+    virsorter_rows = []
     for entry in raw_file[1:].split('\n>'):
         split_entry = entry.strip().split('\n')
         entry_data = split_entry[0].split('|')
@@ -170,9 +168,8 @@ def get_overlap(row1, row2):
 def is_transposon(pfam_hits):
     if pd.isna(pfam_hits):
         return False
-    else:
-        pfams = {i[1:-1].split('.')[0] for i in re.findall(r'\[PF\d\d\d\d\d.\d*\]', pfam_hits)}
-        return len(pfams & TRANSPOSON_PFAMS) > 0
+    pfams = {i[1:-1].split('.')[0] for i in re.findall(r'\[PF\d\d\d\d\d.\d*\]', pfam_hits)}
+    return len(pfams & TRANSPOSON_PFAMS) > 0
 
 
 def get_gene_order(dram_genes, virsorter_genes, min_overlap=.70):
@@ -186,7 +183,7 @@ def get_gene_order(dram_genes, virsorter_genes, min_overlap=.70):
     virsorter_genes = virsorter_genes.sort_values('start_position')
     virsorter_gene_number = 0
 
-    merged_genes_rows = list()
+    merged_genes_rows = []
     while (dram_gene_number < dram_genes.shape[0]) and (virsorter_gene_number < virsorter_genes.shape[0]):
         dram_row = dram_genes.iloc[dram_gene_number]
         dram_gene = dram_genes.index[dram_gene_number]
@@ -199,50 +196,46 @@ def get_gene_order(dram_genes, virsorter_genes, min_overlap=.70):
             merged_genes_rows.append((dram_gene, virsorter_gene, virsorter_gene_category))
             dram_gene_number += 1
             virsorter_gene_number += 1
-        else:  # if not significantly overlap then determine first gene
-            if dram_row['start_position'] < virsorter_row['start_position']:
-                merged_genes_rows.append((dram_gene, None, None))
-                dram_gene_number += 1
-            elif dram_row['start_position'] > virsorter_row['start_position']:
-                merged_genes_rows.append((None, virsorter_gene, virsorter_gene_category))
-                virsorter_gene_number += 1
-            else:  # if the same start positions then shorter gene is the first
-                if dram_row['end_position'] < virsorter_row['end_position']:
-                    merged_genes_rows.append((dram_gene, None, None))
-                    dram_gene_number += 1
-                elif dram_row['end_position'] > virsorter_row['end_position']:
-                    merged_genes_rows.append((None, virsorter_gene,
-                                              virsorter_gene_category))
-                    virsorter_gene_number += 1
-                else:  # genes have the same start and end position so this shouldn't happen
-                    raise ValueError('This should never happen: %s, %s, %s, %s' % (dram_row.start_position,
-                                                                                   dram_row.end_position,
-                                                                                   virsorter_row.start_position,
-                                                                                   virsorter_row.end_position))
+        elif (
+            dram_row['start_position'] >= virsorter_row['start_position']
+            and dram_row['start_position'] <= virsorter_row['start_position']
+            and dram_row['end_position'] < virsorter_row['end_position']
+            or dram_row['start_position'] < virsorter_row['start_position']
+        ):
+            merged_genes_rows.append((dram_gene, None, None))
+            dram_gene_number += 1
+        elif (
+            dram_row['start_position'] <= virsorter_row['start_position']
+            and dram_row['end_position'] > virsorter_row['end_position']
+            or dram_row['start_position'] > virsorter_row['start_position']
+        ):
+            merged_genes_rows.append((None, virsorter_gene,
+                                      virsorter_gene_category))
+            virsorter_gene_number += 1
+        else:  # genes have the same start and end position so this shouldn't happen
+            raise ValueError(
+                f'This should never happen: {dram_row.start_position}, {dram_row.end_position}, {virsorter_row.start_position}, {virsorter_row.end_position}'
+            )
     # clean up and add extras
     # if at end of both then just end
     if (dram_gene_number == dram_genes.shape[0]) and (virsorter_gene_number == virsorter_genes.shape[0]):
         pass
-    # if not at end of dram annotations then add the rest
     elif dram_gene_number != dram_genes.shape[0]:
-        for i in range(dram_gene_number, dram_genes.shape[0]):
-            dram_gene = dram_genes.index[i]
-            merged_genes_rows.append((dram_gene, None, None))
-    # if not at end of virsorter genes then add the rest
-    elif virsorter_gene_number != virsorter_genes.shape[0]:
+        merged_genes_rows.extend(
+            (dram_genes.index[i], None, None)
+            for i in range(dram_gene_number, dram_genes.shape[0])
+        )
+    else:
         for i in range(virsorter_gene_number, virsorter_genes.shape[0]):
             virsorter_row = virsorter_genes.iloc[i]
             merged_genes_rows.append((None, virsorter_genes.index[i],
                                       virsorter_row['viral_protein_cluster_category']))
-    # how can we be not at the end of either?
-    else:
-        return ValueError('How is this even possible?')
     return merged_genes_rows
 
 
 def calculate_auxiliary_scores(gene_order):
     # right now saying that flanked means between here and the end of the contig
-    gene_auxiliary_score_dict = dict()
+    gene_auxiliary_score_dict = {}
     for i, (dram_gene, virsorter_gene, virsorter_category) in enumerate(gene_order):
         if dram_gene is not None:
             left_categories = [left_virsorter_category for left_dram_gene, left_viral_gene, left_virsorter_category
@@ -255,20 +248,16 @@ def calculate_auxiliary_scores(gene_order):
             hallmark_right = len(set(right_categories) & set(VIRSORTER_HALLMARK_GENE_CATEGORIES)) > 0
             viral_like_right = len(set(right_categories) & set(VIRSORTER_VIRAL_LIKE_GENE_CATEGORIES)) > 0
             # if end of contig then 5:
-            if i == 0 or i == (len(gene_order)-1):
+            if i in [0, len(gene_order) - 1]:
                 auxiliary_score = 5
             elif hallmark_left and hallmark_right:  # hallmark on both sides then cat 1
                 auxiliary_score = 1
-            # hallmark on one side and viral like on other then cat 2
             elif (hallmark_left and viral_like_right) or (viral_like_left and hallmark_right):
                 auxiliary_score = 2
-            # viral like on both side then cat 3
             elif viral_like_left and viral_like_right:
                 auxiliary_score = 3
-            # not end of contig and hallmark or viral like on other side
             elif (hallmark_left or viral_like_left) or (hallmark_right or viral_like_right):
                 auxiliary_score = 4
-            # if gene is the only virsorter viral like or hallmark on contig then make it a 4
             elif (virsorter_category in VIRSORTER_HALLMARK_GENE_CATEGORIES) or \
                  (virsorter_category in VIRSORTER_VIRAL_LIKE_GENE_CATEGORIES):
                 auxiliary_score = 4
@@ -280,7 +269,7 @@ def calculate_auxiliary_scores(gene_order):
 
 def get_metabolic_flags(annotations, metabolic_genes, amgs, verified_amgs, scaffold_length_dict,
                         length_from_end=5000):
-    flag_dict = dict()
+    flag_dict = {}
     metabolic_genes = set(metabolic_genes)
     for scaffold, scaffold_annotations in annotations.groupby('scaffold'):
         # perc_xh = sum([i == 'Xh' if not pd.isna(i) else False for i in scaffold_annotations['vogdb_categories']]) \
@@ -291,9 +280,12 @@ def get_metabolic_flags(annotations, metabolic_genes, amgs, verified_amgs, scaff
             flags = ''
             gene_annotations = set(get_ids_from_annotation(pd.DataFrame(row).transpose()).keys())  # TODO: Fix
             # is viral
-            if not pd.isna(row['vogdb_categories']):
-                if len({'Xr', 'Xs'} & set(row['vogdb_categories'].split(';'))) > 0:
-                    flags += 'V'
+            if (
+                not pd.isna(row['vogdb_categories'])
+                and len({'Xr', 'Xs'} & set(row['vogdb_categories'].split(';')))
+                > 0
+            ):
+                flags += 'V'
             # is metabolic
             if len(metabolic_genes & gene_annotations) > 0:
                 flags += 'M'
@@ -348,8 +340,7 @@ def get_amg_ids(amg_frame):
 
 
 def get_virsorter2_affi_contigs_name(scaffold):
-    virsorter_scaffold_name = scaffold.replace('|', '_')
-    return virsorter_scaffold_name
+    return scaffold.replace('|', '_')
 
 
 def get_virsorter_original_affi_contigs_name(scaffold):
@@ -384,15 +375,18 @@ def add_dramv_scores_and_flags(annotations, db_handler, virsorter_hits=None, inp
 
     # add auxiliary score
     if virsorter_hits is not None:
-        gene_virsorter_category_dict = dict()
-        gene_auxiliary_score_dict = dict()
+        gene_virsorter_category_dict = {}
+        gene_auxiliary_score_dict = {}
         for scaffold, dram_frame in annotations.groupby('scaffold'):
             virsorter_scaffold_name = get_virsorter_affi_contigs_name(scaffold)
             virsorter_frame = virsorter_hits.loc[virsorter_hits.name == virsorter_scaffold_name]
             gene_order = get_gene_order(dram_frame, virsorter_frame)
-            gene_virsorter_category_dict.update({dram_gene: virsorter_category for dram_gene, _, virsorter_category in
-                                                 gene_order if dram_gene is not None})
-            gene_auxiliary_score_dict.update(calculate_auxiliary_scores(gene_order))
+            gene_virsorter_category_dict |= {
+                dram_gene: virsorter_category
+                for dram_gene, _, virsorter_category in gene_order
+                if dram_gene is not None
+            }
+            gene_auxiliary_score_dict |= calculate_auxiliary_scores(gene_order)
         annotations['virsorter_category'] = pd.Series(gene_virsorter_category_dict)
         annotations['auxiliary_score'] = pd.Series(gene_auxiliary_score_dict)
 
@@ -425,12 +419,12 @@ def annotate_vgfs(input_fasta, virsorter_affi_contigs=None, output_dir='.', min_
                   keep_tmp_dir=True, low_mem_mode=False, threads=10, verbose=True):
     # set up
     start_time = datetime.now()
-    print('%s: Viral annotation started' % str(datetime.now()))
+    print(f'{str(datetime.now())}: Viral annotation started')
 
     # check inputs
     prodigal_modes = ['train', 'meta', 'single']
     if prodigal_mode not in prodigal_modes:
-        raise ValueError('Prodigal mode must be one of %s.' % ', '.join(prodigal_modes))
+        raise ValueError(f"Prodigal mode must be one of {', '.join(prodigal_modes)}.")
     elif prodigal_mode in ['normal', 'single']:
         warnings.warn('When running prodigal in single mode your bins must have long contigs (average length >3 Kbp), '
                       'be long enough (total length > 500 Kbp) and have very low contamination in order for prodigal '
@@ -451,19 +445,23 @@ def annotate_vgfs(input_fasta, virsorter_affi_contigs=None, output_dir='.', min_
         contig_dir = path.join(output_dir, 'vMAGs')
         mkdir(contig_dir)
 
-        contig_locs = list()
+        contig_locs = []
         for seq in read_sequence(input_fasta, format='fasta'):
             if len(seq) >= min_contig_size:
                 if '=' in seq.metadata['id'] or ';' in seq.metadata['id']:
                     raise ValueError('FASTA headers must not have = or ; before the first space (%s). To run DRAM-v '
                                      'you must rerun VIRSorter with = and ; removed from the headers or run DRAM-v.py '
                                      'remove_bad_characters and then rerun DRAM-v' % seq.metadata['id'])
-                if virsorter_hits is not None:
-                    if get_virsorter_affi_contigs_name(seq.metadata['id']) not in virsorter_hits['name'].values:
-                        raise ValueError("No virsorter calls found in %s for scaffold %s from input fasta" %
-                                         (virsorter_affi_contigs, seq.metadata['id']))
-                contig_loc = path.join(contig_dir, '%s.fasta' % seq.metadata['id'])
-                write_sequence((i for i in [seq]), format='fasta', into=contig_loc)
+                if (
+                    virsorter_hits is not None
+                    and get_virsorter_affi_contigs_name(seq.metadata['id'])
+                    not in virsorter_hits['name'].values
+                ):
+                    raise ValueError(
+                        f"No virsorter calls found in {virsorter_affi_contigs} for scaffold {seq.metadata['id']} from input fasta"
+                    )
+                contig_loc = path.join(contig_dir, f"{seq.metadata['id']}.fasta")
+                write_sequence(iter([seq]), format='fasta', into=contig_loc)
                 contig_locs.append(contig_loc)
     else:
         contig_locs = [input_fasta]
@@ -474,12 +472,14 @@ def annotate_vgfs(input_fasta, virsorter_affi_contigs=None, output_dir='.', min_
                                   bit_score_threshold, rbh_bit_score_threshold, custom_db_name, custom_fasta_loc,
                                   custom_hmm_name, custom_hmm_loc, custom_hmm_cutoffs_loc, kofam_use_dbcan2_thresholds,
                                   skip_trnascan, rename_bins, keep_tmp_dir, start_time, threads, verbose)
-    print('%s: Annotations complete, assigning auxiliary scores and flags' % str(datetime.now() - start_time))
+    print(
+        f'{str(datetime.now() - start_time)}: Annotations complete, assigning auxiliary scores and flags'
+    )
 
     annotations = add_dramv_scores_and_flags(annotations, db_handler, virsorter_hits, input_fasta)
 
     # write annotations
     annotations.to_csv(path.join(output_dir, 'annotations.tsv'), sep='\t')
 
-    print("%s: Completed annotations" % str(datetime.now() - start_time))
+    print(f"{str(datetime.now() - start_time)}: Completed annotations")
 

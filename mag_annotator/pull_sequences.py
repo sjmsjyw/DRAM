@@ -15,7 +15,7 @@ from mag_annotator.database_handler import DatabaseHandler
 
 def get_genes_from_identifiers(annotations, genes=None, fastas=None, scaffolds=None, identifiers=None, categories=None,
                                custom_distillate=None):
-    specific_genes_to_keep = list()
+    specific_genes_to_keep = []
     # filter fastas
     if fastas is not None:
         for fasta in fastas:
@@ -36,36 +36,39 @@ def get_genes_from_identifiers(annotations, genes=None, fastas=None, scaffolds=N
 
     # filter based on annotations
     if (identifiers is not None) or (categories is not None):
-        annotation_genes_to_keep = list()
+        annotation_genes_to_keep = []
 
         # make a dictionary of genes to
-        gene_to_ids = dict()
+        gene_to_ids = {}
         for i, row in annotations_to_keep.iterrows():
             row_ids = get_ids_from_row(row)
             if len(row_ids) > 0:
                 gene_to_ids[i] = set(row_ids)
 
-        # get genes with ids
-        if identifiers is not None:
-            identifiers = set(identifiers)
-            for gene, ids in gene_to_ids.items():
-                if len(set(ids) & set(identifiers)) > 0:
-                    annotation_genes_to_keep.append(gene)
-
-        # get genes from distillate categories
-        if categories is not None:
-            database_handler = DatabaseHandler()
-            genome_summary_form = pd.read_csv(database_handler.db_locs['genome_summary_form'], sep='\t')
-            if custom_distillate is not None:
-                genome_summary_form = pd.concat([genome_summary_form, pd.read_csv(custom_distillate, sep='\t')])
-            for level in ['module', 'sheet', 'header', 'subheader']:
-                for category, frame in genome_summary_form.loc[~pd.isna(genome_summary_form[level])].groupby(level):
-                    if category in categories:
-                        for gene, ids in gene_to_ids.items():
-                            if len(ids & set(frame['gene_id'])) > 0:
-                                annotation_genes_to_keep.append(gene)
     else:
         annotation_genes_to_keep = list(annotations_to_keep.index)
+        # get genes with ids
+    if identifiers is not None:
+        identifiers = set(identifiers)
+        annotation_genes_to_keep.extend(
+            gene
+            for gene, ids in gene_to_ids.items()
+            if len(set(ids) & set(identifiers)) > 0
+        )
+        # get genes from distillate categories
+    if categories is not None:
+        database_handler = DatabaseHandler()
+        genome_summary_form = pd.read_csv(database_handler.db_locs['genome_summary_form'], sep='\t')
+        if custom_distillate is not None:
+            genome_summary_form = pd.concat([genome_summary_form, pd.read_csv(custom_distillate, sep='\t')])
+        for level in ['module', 'sheet', 'header', 'subheader']:
+            for category, frame in genome_summary_form.loc[~pd.isna(genome_summary_form[level])].groupby(level):
+                if category in categories:
+                    annotation_genes_to_keep.extend(
+                        gene
+                        for gene, ids in gene_to_ids.items()
+                        if len(ids & set(frame['gene_id'])) > 0
+                    )
     return annotation_genes_to_keep
 
 
@@ -109,8 +112,12 @@ def pull_sequences(input_annotations, input_fasta, output_fasta, fastas=None, sc
         # filter based on amg flags
         if amg_flags is not None:
             amg_flags = set(amg_flags)
-            annotations = annotations.loc[[len(set(i) & amg_flags) > 0 if not pd.isna(i) else False
-                                           for i in annotations.amg_flags]]
+            annotations = annotations.loc[
+                [
+                    False if pd.isna(i) else len(set(i) & amg_flags) > 0
+                    for i in annotations.amg_flags
+                ]
+            ]
     if len(annotations) == 0:
         raise ValueError("DRAM-v filters yielded no annotations")
 
@@ -122,7 +129,7 @@ def pull_sequences(input_annotations, input_fasta, output_fasta, fastas=None, sc
 
 def find_neighborhoods(annotations, genes_from_ids, distance_bp=None, distance_genes=None):
     # get neighborhoods as dataframes
-    neighborhood_frames = list()
+    neighborhood_frames = []
     for neighborhood_number, gene in enumerate(genes_from_ids):
         gene_row = annotations.loc[gene]
         scaffold_annotations = annotations.loc[annotations['scaffold'] == gene_row['scaffold']]
@@ -174,13 +181,20 @@ def get_gene_neighborhoods(input_file, output_dir, genes=None, identifiers=None,
         output_fasta_generator = (i for i in read_sequence(genes_loc, format='fasta')
                                   if i.metadata['id'] in neighborhood_all_annotations.index)
         # TODO: potentially generate one fasta file per neighborhood
-        write_sequence(output_fasta_generator, format='fasta',
-                       into=path.join(output_dir, 'neighborhood_genes.%s' % genes_loc.split('.')[-1]))
+        write_sequence(
+            output_fasta_generator,
+            format='fasta',
+            into=path.join(
+                output_dir, f"neighborhood_genes.{genes_loc.split('.')[-1]}"
+            ),
+        )
 
     if scaffolds_loc is not None:
-        neighborhood_all_annotations['scaffold_mod'] = ['%s_%s' % (row['fasta'], row['scaffold'])
-                                                        for i, row in neighborhood_all_annotations.iterrows()]
-        neighborhood_scaffolds = list()
+        neighborhood_all_annotations['scaffold_mod'] = [
+            f"{row['fasta']}_{row['scaffold']}"
+            for i, row in neighborhood_all_annotations.iterrows()
+        ]
+        neighborhood_scaffolds = []
         for scaffold in read_sequence(scaffolds_loc, format='fasta'):
             if scaffold.metadata['id'] in neighborhood_all_annotations['scaffold_mod'].values:
                 scaffold_frame = neighborhood_all_annotations.loc[neighborhood_all_annotations['scaffold_mod'] ==
@@ -189,5 +203,8 @@ def get_gene_neighborhoods(input_file, output_dir, genes=None, identifiers=None,
                     neighborhood_frame = neighborhood_frame.sort_values('start_position')
                     neighborhood_scaffolds.append(scaffold[neighborhood_frame['start_position'][0]:
                                                            neighborhood_frame['end_position'][-1]])
-        write_sequence((i for i in neighborhood_scaffolds), format='fasta',
-                       into=path.join(output_dir, 'neighborhood_scaffolds.fna'))
+        write_sequence(
+            iter(neighborhood_scaffolds),
+            format='fasta',
+            into=path.join(output_dir, 'neighborhood_scaffolds.fna'),
+        )

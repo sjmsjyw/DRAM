@@ -95,8 +95,7 @@ def test_module_net():
                                  ['1,0', 'M12345', 'a module name', 'K00002'],
                                  ['2,0', 'M12345', 'a module name', 'K00003']],
                                 columns=['path', 'module', 'module_name', 'ko'])
-    test_module_net = build_module_net(module_frame)
-    return test_module_net
+    return build_module_net(module_frame)
 
 
 def test_build_module_net(test_module_net):

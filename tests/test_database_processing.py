@@ -25,7 +25,7 @@ def test_process_kegg_db(tmpdir, phix_proteins, fake_gene_link_loc):
     processed_kegg_dir = tmpdir.mkdir('process_kegg_test')
     kegg_db = process_kegg_db(processed_kegg_dir, phix_proteins, fake_gene_link_loc, download_date='today')
     assert os.path.isfile(kegg_db)
-    assert os.path.isfile('%s_h' % kegg_db)
+    assert os.path.isfile(f'{kegg_db}_h')
 
 
 def test_process_mmspro(tmpdir):
